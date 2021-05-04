@@ -35,4 +35,5 @@ pub unsafe fn init_phase_1(boot_info: &'static BootInfo) {
     interrupts::enable();
 
     init_sse();
+    crate::sched::task::x86_64::init_xsave();
 }
