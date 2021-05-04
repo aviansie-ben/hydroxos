@@ -44,11 +44,12 @@ pub mod x86_64 {
         pub fdp: u64,
         pub mxcsr: u32,
         pub mxcsr_mask: u32,
-        pub mm: [[u8; 8]; 8],
-        pub xmm: [[u8; 8]; 16],
+        pub mm: [[u8; 16]; 8],
+        pub xmm: [[u8; 16]; 16],
+        pub reserved_1: [u8; 96],
         pub xstate_bv: [u8; 8],
         pub xcomp_bv: [u8; 8],
-        pub reserved_1: [u8; 48],
+        pub reserved_2: [u8; 48],
         pub xsave_extended: [u8; XSAVE_MAX_EXTENDED_SIZE]
     }
 
