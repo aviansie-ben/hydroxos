@@ -2,6 +2,7 @@ use bootloader::BootInfo;
 
 use crate::io::vt::{VirtualTerminalDisplay};
 
+pub mod cpuid;
 pub mod dev;
 pub mod gdt;
 pub mod idt;
@@ -16,6 +17,8 @@ pub unsafe fn create_primary_display(_: &'static BootInfo) -> VirtualTerminalDis
 
 pub unsafe fn init_phase_1(boot_info: &'static BootInfo) {
     use x86_64::instructions::interrupts;
+
+    cpuid::init_bsp();
 
     page::init_phys_mem_base(boot_info.physical_memory_offset as *mut u8);
     idt::init_bsp();
