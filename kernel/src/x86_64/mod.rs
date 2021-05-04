@@ -8,6 +8,7 @@ pub mod gdt;
 pub mod idt;
 pub mod page;
 pub mod pic;
+pub mod regs;
 
 pub unsafe fn create_primary_display(_: &'static BootInfo) -> VirtualTerminalDisplay {
     use self::dev::vgabuf::TextBuffer;
@@ -35,5 +36,5 @@ pub unsafe fn init_phase_1(boot_info: &'static BootInfo) {
     interrupts::enable();
 
     init_sse();
-    crate::sched::task::x86_64::init_xsave();
+    regs::init_xsave();
 }

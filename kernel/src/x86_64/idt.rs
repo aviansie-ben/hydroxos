@@ -4,8 +4,9 @@ use x86_64::{PrivilegeLevel, VirtAddr};
 use x86_64::instructions::tables::lidt;
 use x86_64::structures::DescriptorTablePointer;
 
-use crate::sched::task::x86_64::{GeneralRegister, SavedBasicRegisters};
 use crate::util::SharedUnsafeCell;
+
+use super::regs::{GeneralRegister, SavedBasicRegisters};
 
 macro_rules! handler_with_code {
     ($name:ident, $n:expr) => {
