@@ -36,7 +36,10 @@ entry_point!(test_main);
 
 #[cfg(test)]
 pub fn test_main(boot_info: &'static BootInfo) -> ! {
-    x86_64::page::init_phys_mem_base(boot_info.physical_memory_offset as *mut u8);
+    unsafe {
+        early_alloc::init();
+        x86_64::init_phase_1(boot_info);
+    };
     test_harness_main();
     loop {};
 }
