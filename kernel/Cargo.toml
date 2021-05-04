@@ -5,7 +5,7 @@ authors = ["Benjamin Thomas <ben@benthomas.ca>"]
 edition = "2018"
 
 [package.metadata.bootimage]
-test-args = ["-device", "isa-debug-exit,iobase=0xf4,iosize=0x4", "-serial", "stdio", "-display", "none"]
+test-args = ["-device", "isa-debug-exit,iobase=0xf4,iosize=0x4", "-serial", "stdio", "-display", "none", "-cpu", "qemu64,+xsave,+avx"]
 test-success-exit-code = 1
 
 [package.metadata.bootloader]
