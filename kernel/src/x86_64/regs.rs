@@ -1,8 +1,13 @@
+use core::mem;
+
 use crate::util::SharedUnsafeCell;
 
-pub const XSAVE_MAX_EXTENDED_SIZE: usize = 0;
+pub const XSAVE_AVX_SIZE: usize = 256;
+pub const XSAVE_MAX_EXTENDED_SIZE: usize = XSAVE_AVX_SIZE + 1024;
 
 static XSAVE_ENABLED: SharedUnsafeCell<bool> = SharedUnsafeCell::new(false);
+static XSAVE_AVX_OFFSET: SharedUnsafeCell<usize> = SharedUnsafeCell::new(!0);
+
 pub fn xsave_enabled() -> bool {
     unsafe { *XSAVE_ENABLED.get() }
 }
@@ -39,6 +44,79 @@ pub struct SavedBasicRegisters {
     pub gs: u16
 }
 
+fn to_ymm_val(lo: &[u8; 16], hi: &[u8; 16]) -> [u8; 32] {
+    let mut result = [0; 32];
+
+    for i in 0..16 {
+        result[i] = lo[i];
+    };
+
+    for i in 0..16 {
+        result[i + 16] = hi[i];
+    };
+
+    result
+}
+
+fn from_ymm_val(val: &[u8; 32]) -> ([u8; 16], [u8; 16]) {
+    let mut lo = [0; 16];
+    let mut hi = [0; 16];
+
+    for i in 0..16 {
+        lo[i] = val[i];
+    };
+
+    for i in 0..16 {
+        hi[i] = val[i + 16];
+    };
+
+    (lo, hi)
+}
+
+#[derive(Clone, Debug)]
+#[repr(C)]
+pub struct XSaveAvx {
+    pub ymm_h: [[u8; 16]; 16]
+}
+
+impl XSaveAvx {
+    fn new() -> XSaveAvx {
+        XSaveAvx {
+            ymm_h: [[0; 16]; 16]
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+#[repr(C)]
+pub struct XSaveExtendedArea([u8; XSAVE_MAX_EXTENDED_SIZE]);
+
+impl XSaveExtendedArea {
+    fn new() -> XSaveExtendedArea {
+        XSaveExtendedArea([0; XSAVE_MAX_EXTENDED_SIZE])
+    }
+
+    fn ext_avx(&self) -> Option<&XSaveAvx> {
+        unsafe {
+            if *XSAVE_AVX_OFFSET.get() != !0 {
+                Some(mem::transmute(&self.0[*XSAVE_AVX_OFFSET.get()]))
+            } else {
+                None
+            }
+        }
+    }
+
+    fn ext_avx_mut(&mut self) -> Option<&mut XSaveAvx> {
+        unsafe {
+            if *XSAVE_AVX_OFFSET.get() != !0 {
+                Some(mem::transmute(&mut self.0[*XSAVE_AVX_OFFSET.get()]))
+            } else {
+                None
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 #[repr(C, align(64))]
 pub struct SavedExtendedRegisters {
@@ -57,7 +135,7 @@ pub struct SavedExtendedRegisters {
     xstate_bv: [u8; 8],
     xcomp_bv: [u8; 8],
     reserved_2: [u8; 48],
-    xsave_extended: [0; XSAVE_MAX_EXTENDED_SIZE]
+    xsave_extended: XSaveExtendedArea
 }
 
 impl SavedExtendedRegisters {
@@ -78,7 +156,7 @@ impl SavedExtendedRegisters {
             xstate_bv: [0; 8],
             xcomp_bv: [0; 8],
             reserved_2: [0; 48],
-            xsave_extended: [0; XSAVE_MAX_EXTENDED_SIZE]
+            xsave_extended: XSaveExtendedArea::new()
         }
     }
 
@@ -135,6 +213,44 @@ impl SavedExtendedRegisters {
         };
         self.xmm[idx] = val;
     }
+
+    pub fn ymm(&self, idx: usize) -> Result<[u8; 32], ()> {
+        if let Some(ext_avx) = self.xsave_extended.ext_avx() {
+            if (self.xstate_bv[0] & 0x02) == 0 {
+                Ok([0; 32])
+            } else if (self.xstate_bv[0] & 0x04) == 0 {
+                Ok(to_ymm_val(&self.xmm[idx], &[0; 16]))
+            } else {
+                Ok(to_ymm_val(&self.xmm[idx], &ext_avx.ymm_h[idx]))
+            }
+        } else {
+            Err(())
+        }
+    }
+
+    pub fn set_ymm(&mut self, idx: usize, val: [u8; 32]) -> Result<(), ()> {
+        if (self.xstate_bv[0] & 0x02) == 0 {
+            self.xmm = [[0; 16]; 16];
+            self.xstate_bv[0] |= 0x02;
+        };
+
+        if (self.xstate_bv[0] & 0x04) == 0 {
+            if let Some(ext_avx) = self.xsave_extended.ext_avx_mut() {
+                *ext_avx = XSaveAvx::new();
+                self.xstate_bv[0] |= 0x04;
+            };
+        };
+
+        if let Some(ext_avx) = self.xsave_extended.ext_avx_mut() {
+            let (lo, hi) = from_ymm_val(&val);
+
+            ext_avx.ymm_h[idx] = hi;
+            self.xmm[idx] = lo;
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
 }
 
 pub struct SavedRegisters {
@@ -149,23 +265,37 @@ pub unsafe fn init_xsave() {
     if cpuid::get_minimum_features().supports(CpuFeature::XSAVE) {
         Cr4::write(Cr4::read() | Cr4Flags::OSXSAVE);
 
-        let xsave_feature_set_lo: u32 = 0x00000003; // x87 and SSE
+        let mut current_offset = 0;
+        let mut xsave_feature_set_lo: u32 = 0x00000003; // x87 and SSE
         let xsave_feature_set_hi: u32 = 0x00000000;
 
+        if cpuid::get_minimum_features().supports(CpuFeature::AVX) {
+            xsave_feature_set_lo |= 0x00000004;
+            *XSAVE_AVX_OFFSET.get() = current_offset;
+            current_offset += XSAVE_AVX_SIZE;
+        };
+
+        assert!(current_offset <= XSAVE_MAX_EXTENDED_SIZE);
+
         asm!(
-        "mov ecx, 0",
-        "xsetbv",
-        in("eax") xsave_feature_set_lo,
-        in("edx") xsave_feature_set_hi
+            "mov ecx, 0",
+            "xsetbv",
+            in("eax") xsave_feature_set_lo,
+            in("edx") xsave_feature_set_hi
         );
 
         *XSAVE_ENABLED.get() = true;
+    } else {
+        assert!(!cpuid::get_minimum_features().supports(CpuFeature::AVX));
     };
 }
 
 #[cfg(test)]
 mod test {
+    use crate::test_util::skip;
+
     use super::SavedExtendedRegisters;
+    use super::super::cpuid::{self, CpuFeature};
 
     pub const ST_ZERO: [u8; 10] = [0; 10];
     pub const ST_TEST: [u8; 10] = [
@@ -181,6 +311,20 @@ mod test {
     pub const XMM14_VAL: [u8; 16] = [
         0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF,
         0xCA, 0xFE, 0xDE, 0xAD, 0xCA, 0xFE, 0xD0, 0x0D
+    ];
+
+    pub const YMM_ZERO: [u8; 32] = [0; 32];
+    pub const YMM0_VAL: [u8; 32] = [
+        0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
+        0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10,
+        0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10,
+        0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF
+    ];
+    pub const YMM14_VAL: [u8; 32] = [
+        0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF,
+        0xCA, 0xFE, 0xDE, 0xAD, 0xCA, 0xFE, 0xD0, 0x0D,
+        0xCA, 0xFE, 0xD0, 0x0D, 0xCA, 0xFE, 0xDE, 0xAD,
+        0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF
     ];
 
     #[test_case]
@@ -263,5 +407,61 @@ mod test {
 
         assert_eq!(XMM0_VAL, xmm0);
         assert_eq!(XMM14_VAL, xmm14);
+    }
+
+    #[test_case]
+    fn test_save_ymm() {
+        if !cpuid::get_minimum_features().supports(CpuFeature::AVX) {
+            skip("avx not supported");
+            return;
+        };
+
+        let mut state = SavedExtendedRegisters::new();
+
+        unsafe {
+            asm!("vmovdqu ymm0, [{}]", in(reg) &YMM0_VAL);
+            asm!("vmovdqu ymm14, [{}]", in(reg) &YMM14_VAL);
+        };
+
+        state.save();
+
+        assert_eq!(YMM0_VAL, state.ymm(0).unwrap());
+        assert_eq!(YMM14_VAL, state.ymm(14).unwrap());
+    }
+
+    #[test_case]
+    fn test_restore_ymm() {
+        if !cpuid::get_minimum_features().supports(CpuFeature::AVX) {
+            skip("avx not supported");
+            return;
+        };
+
+        let mut state = SavedExtendedRegisters::new();
+
+        unsafe {
+            asm!(
+                "vmovdqu ymm0, [{}]",
+                "vmovdqu ymm14, ymm0",
+                in(reg) &YMM_ZERO
+            );
+        };
+
+        state.save();
+        state.set_ymm(0, YMM0_VAL).unwrap();
+        state.set_ymm(14, YMM14_VAL).unwrap();
+        state.restore();
+
+        assert_eq!(YMM0_VAL, state.ymm(0).unwrap());
+
+        let mut ymm0 = YMM_ZERO;
+        let mut ymm14 = YMM_ZERO;
+
+        unsafe {
+            asm!("vmovdqu [{}], ymm0", in(reg) &mut ymm0);
+            asm!("vmovdqu [{}], ymm14", in(reg) &mut ymm14);
+        };
+
+        assert_eq!(YMM0_VAL, ymm0);
+        assert_eq!(YMM14_VAL, ymm14);
     }
 }

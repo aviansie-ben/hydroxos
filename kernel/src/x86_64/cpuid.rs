@@ -12,6 +12,11 @@ impl CpuFeature {
     const FEATURE_VEC_IDX_01_EDX: u32 = 1;
     const FEATURE_VEC_IDX_MAX: u32 = 1;
 
+    pub const AVX: CpuFeature = CpuFeature {
+        feature_vec_idx: CpuFeature::FEATURE_VEC_IDX_01_ECX,
+        feature_vec_bit: 1 << 28,
+        name: "avx"
+    };
     pub const XSAVE: CpuFeature = CpuFeature {
         feature_vec_idx: CpuFeature::FEATURE_VEC_IDX_01_ECX,
         feature_vec_bit: 1 << 26,
