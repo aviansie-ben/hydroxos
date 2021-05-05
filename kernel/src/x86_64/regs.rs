@@ -42,22 +42,22 @@ pub struct SavedBasicRegisters {
 #[derive(Clone, Debug)]
 #[repr(C, align(64))]
 pub struct SavedExtendedRegisters {
-    pub fcw: u16,
-    pub fsw: u16,
-    pub ftw: u8,
-    pub reserved_0: u8,
-    pub fop: u16,
-    pub fip: u64,
-    pub fdp: u64,
-    pub mxcsr: u32,
-    pub mxcsr_mask: u32,
-    pub mm: [[u8; 16]; 8],
-    pub xmm: [[u8; 16]; 16],
-    pub reserved_1: [u8; 96],
-    pub xstate_bv: [u8; 8],
-    pub xcomp_bv: [u8; 8],
-    pub reserved_2: [u8; 48],
-    pub xsave_extended: [u8; XSAVE_MAX_EXTENDED_SIZE]
+    fcw: u16,
+    fsw: u16,
+    ftw: u8,
+    reserved_0: u8,
+    fop: u16,
+    fip: u64,
+    fdp: u64,
+    mxcsr: u32,
+    mxcsr_mask: u32,
+    st: [([u8; 10], [u8; 6]); 8],
+    xmm: [[u8; 16]; 16],
+    reserved_1: [u8; 96],
+    xstate_bv: [u8; 8],
+    xcomp_bv: [u8; 8],
+    reserved_2: [u8; 48],
+    xsave_extended: [0; XSAVE_MAX_EXTENDED_SIZE]
 }
 
 impl SavedExtendedRegisters {
@@ -72,7 +72,7 @@ impl SavedExtendedRegisters {
             fdp: 0,
             mxcsr: 0x1F80,
             mxcsr_mask: 0xFFFF,
-            mm: [[0; 16]; 8],
+            st: [([0; 10], [0; 6]); 8],
             xmm: [[0; 16]; 16],
             reserved_1: [0; 96],
             xstate_bv: [0; 8],
@@ -87,6 +87,7 @@ impl SavedExtendedRegisters {
             if xsave_enabled() {
                 asm!("xsave [{}]", in(reg) self, in("eax") -1, in("edx") -1);
             } else {
+                self.xstate_bv[0] = 0x3;
                 asm!("fxsave [{}]", in(reg) self);
             };
         };
@@ -100,6 +101,39 @@ impl SavedExtendedRegisters {
                 asm!("fxrstor [{}]", in(reg) self);
             };
         };
+    }
+
+    pub fn st(&self, idx: usize) -> [u8; 10] {
+        if (self.xstate_bv[0] & 0x01) != 0 {
+            self.st[idx].0
+        } else {
+            [0; 10]
+        }
+    }
+
+    pub fn set_st(&mut self, idx: usize, val: [u8; 10]) {
+        if (self.xstate_bv[0] & 0x01) == 0 {
+            self.st = [([0; 10], [0; 6]); 8];
+            self.xstate_bv[0] |= 0x01;
+        };
+
+        self.st[idx].0 = val;
+    }
+
+    pub fn xmm(&self, idx: usize) -> [u8; 16] {
+        if (self.xstate_bv[0] & 0x02) != 0 {
+            self.xmm[idx]
+        } else {
+            [0; 16]
+        }
+    }
+
+    pub fn set_xmm(&mut self, idx: usize, val: [u8; 16]) {
+        if (self.xstate_bv[0] & 0x02) == 0 {
+            self.xmm = [[0; 16]; 16];
+            self.xstate_bv[0] |= 0x02;
+        };
+        self.xmm[idx] = val;
     }
 }
 
@@ -133,6 +167,12 @@ pub unsafe fn init_xsave() {
 mod test {
     use super::SavedExtendedRegisters;
 
+    pub const ST_ZERO: [u8; 10] = [0; 10];
+    pub const ST_TEST: [u8; 10] = [
+        0x01, 0x02, 0x03, 0x04, 0x05,
+        0x06, 0x07, 0x08, 0x09, 0x0A
+    ];
+
     pub const XMM_ZERO: [u8; 16] = [0; 16];
     pub const XMM0_VAL: [u8; 16] = [
         0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
@@ -144,6 +184,45 @@ mod test {
     ];
 
     #[test_case]
+    fn test_save_st() {
+        let mut state = SavedExtendedRegisters::new();
+
+        unsafe {
+            asm!("fld tbyte ptr [{}]", in(reg) &ST_TEST);
+        };
+
+        state.save();
+
+        unsafe {
+            asm!("fincstp");
+            asm!("ffree st(0)");
+        };
+
+        assert_eq!(ST_TEST, state.st(0));
+    }
+
+    #[test_case]
+    fn test_restore_st() {
+        let mut state = SavedExtendedRegisters::new();
+
+        unsafe {
+            asm!("fld tbyte ptr [{}]", in(reg) &ST_ZERO);
+        };
+
+        state.save();
+        state.set_st(0, ST_TEST);
+        state.restore();
+
+        let mut st0 = [0; 10];
+
+        unsafe {
+            asm!("fstp tbyte ptr [{}]", in(reg) &mut st0);
+        };
+
+        assert_eq!(ST_TEST, st0);
+    }
+
+    #[test_case]
     fn test_save_xmm() {
         let mut state = SavedExtendedRegisters::new();
 
@@ -153,8 +232,8 @@ mod test {
         };
 
         state.save();
-        assert_eq!(XMM0_VAL, state.xmm[0]);
-        assert_eq!(XMM14_VAL, state.xmm[14]);
+        assert_eq!(XMM0_VAL, state.xmm(0));
+        assert_eq!(XMM14_VAL, state.xmm(14));
     }
 
     #[test_case]
@@ -163,15 +242,15 @@ mod test {
 
         unsafe {
             asm!(
-            "movdqu xmm0, [{}]",
-            "movdqu xmm14, xmm0",
-            in(reg) &XMM_ZERO
+                "movdqu xmm0, [{}]",
+                "movdqu xmm14, xmm0",
+                in(reg) &XMM_ZERO
             );
         };
 
         state.save();
-        state.xmm[0] = XMM0_VAL;
-        state.xmm[14] = XMM14_VAL;
+        state.set_xmm(0, XMM0_VAL);
+        state.set_xmm(14, XMM14_VAL);
         state.restore();
 
         let mut xmm0 = XMM_ZERO;
