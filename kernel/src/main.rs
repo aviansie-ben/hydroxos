@@ -6,7 +6,9 @@
 #![feature(custom_test_frameworks)]
 #![feature(exclusive_range_pattern)]
 #![feature(naked_functions)]
+#![feature(negative_impls)]
 #![feature(slice_ptr_len)]
+#![feature(thread_local)]
 
 #![allow(incomplete_features)]
 #![feature(specialization)]

@@ -1,6 +1,10 @@
 use core::marker::PhantomData;
+use core::mem;
+use core::ptr;
 
 use x86_64::instructions::interrupts;
+
+use crate::util::{InterruptDisableSpinlock, InterruptDisableSpinlockGuard};
 
 struct FutureWait<T> {
     refs: usize,
@@ -9,7 +13,7 @@ struct FutureWait<T> {
 
 #[derive(Debug)]
 enum FutureInternal<T> {
-    Waiting(*const spin::Mutex<FutureWait<T>>, PhantomData<spin::Mutex<FutureWait<T>>>),
+    Waiting(*const InterruptDisableSpinlock<FutureWait<T>>, PhantomData<InterruptDisableSpinlock<FutureWait<T>>>),
     Done(T)
 }
 
@@ -34,7 +38,7 @@ impl <T> Future<T> {
         Future(FutureInternal::Done(val))
     }
 
-    fn do_action<U>(&mut self, f: impl FnOnce (Result<&mut T, spin::MutexGuard<FutureWait<T>>>) -> U) -> U {
+    fn do_action<U>(&mut self, f: impl FnOnce (Result<&mut T, InterruptDisableSpinlockGuard<FutureWait<T>>>) -> U) -> U {
         let result = match self.0 {
             FutureInternal::Waiting(ptr, _) => interrupts::without_interrupts(|| unsafe {
                 let mut wait_guard = (*ptr).lock();
@@ -46,8 +50,8 @@ impl <T> Future<T> {
                     let val = if wait.refs == 0 {
                         let val = wait.val.take().unwrap();
 
-                        spin::MutexGuard::leak(wait_guard);
-                        core::ptr::drop_in_place(ptr as *mut spin::Mutex<FutureWait<T>>);
+                        mem::drop(wait_guard);
+                        ptr::drop_in_place(ptr as *mut InterruptDisableSpinlock<FutureWait<T>>);
                         // TODO Free IoFutureWait
 
                         val
@@ -79,7 +83,7 @@ impl <T> Future<T> {
                 Ok(_) => true,
                 Err(wait) => {
                     // TODO Enqueue current thread on the wait queue
-                    core::mem::drop(wait);
+                    mem::drop(wait);
                     // TODO Put the current thread to sleep
                     false
                 }
@@ -105,10 +109,10 @@ impl <T> Future<T> {
     pub fn unwrap_blocking(mut self) -> T {
         self.block_until_ready();
 
-        match core::mem::replace(&mut self.0, FutureInternal::Waiting(core::ptr::null(), PhantomData)) {
+        match mem::replace(&mut self.0, FutureInternal::Waiting(ptr::null(), PhantomData)) {
             FutureInternal::Waiting(_, _) => unreachable!(),
             FutureInternal::Done(val) => {
-                core::mem::forget(self);
+                mem::forget(self);
                 val
             }
         }
@@ -117,10 +121,10 @@ impl <T> Future<T> {
     pub fn try_unwrap_without_update(mut self) -> Result<T, Future<T>> {
         match self.0 {
             FutureInternal::Waiting(_, _) => Err(self),
-            FutureInternal::Done(_) => match core::mem::replace(&mut self.0, FutureInternal::Waiting(core::ptr::null(), PhantomData)) {
+            FutureInternal::Done(_) => match mem::replace(&mut self.0, FutureInternal::Waiting(ptr::null(), PhantomData)) {
                 FutureInternal::Waiting(_, _) => unreachable!(),
                 FutureInternal::Done(val) => {
-                    core::mem::forget(self);
+                    mem::forget(self);
                     Ok(val)
                 }
             }
@@ -153,8 +157,8 @@ impl <T> Drop for Future<T> {
 
                 wait.refs -= 1;
                 if wait.refs == 0 {
-                    spin::MutexGuard::leak(wait);
-                    core::ptr::drop_in_place(ptr as *mut spin::Mutex<FutureWait<T>>);
+                    mem::drop(wait);
+                    ptr::drop_in_place(ptr as *mut InterruptDisableSpinlock<FutureWait<T>>);
                     // TODO Free IoFutureWait
                 };
             },
@@ -165,8 +169,8 @@ impl <T> Drop for Future<T> {
 
 #[derive(Debug)]
 pub struct FutureWriter<T> {
-    wait: *const spin::Mutex<FutureWait<T>>,
-    _data: PhantomData<spin::Mutex<FutureWait<T>>>
+    wait: *const InterruptDisableSpinlock<FutureWait<T>>,
+    _data: PhantomData<InterruptDisableSpinlock<FutureWait<T>>>
 }
 
 impl <T> FutureWriter<T> {
@@ -179,12 +183,12 @@ impl <T> FutureWriter<T> {
                 wait.val = Some(val);
                 // TODO Wake up threads waiting on this future
             } else {
-                spin::MutexGuard::leak(wait);
-                core::ptr::drop_in_place(self.wait as *mut spin::Mutex<FutureWait<T>>);
+                mem::drop(wait);
+                ptr::drop_in_place(ptr as *mut InterruptDisableSpinlock<FutureWait<T>>);
                 // TODO Free IoFutureWait
             };
 
-            core::mem::forget(self);
+            mem::forget(self);
         };
     }
 }

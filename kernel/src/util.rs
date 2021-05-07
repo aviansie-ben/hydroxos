@@ -1,4 +1,4 @@
-use core::cell::UnsafeCell;
+use core::cell::{Cell, UnsafeCell};
 use core::ops::{Deref, DerefMut};
 use x86_64::instructions::interrupts;
 
@@ -57,24 +57,95 @@ impl <T> InterruptDisableSpinlock<T> {
         self.0.get_mut()
     }
 
+    pub fn into_inner(self) -> T {
+        self.0.into_inner()
+    }
+
     pub fn is_locked(&self) -> bool {
         self.0.is_locked()
     }
 
-    pub fn with_lock<U>(&self, f: impl FnOnce (&mut T) -> U) -> U {
-        interrupts::without_interrupts(|| {
-            let mut lock = self.0.lock();
+    pub fn lock(&self) -> InterruptDisableSpinlockGuard<T> {
+        let interrupt_disabler = InterruptDisabler::new();
+        let guard = self.0.lock();
 
-            f(lock.deref_mut())
-        })
+        InterruptDisableSpinlockGuard(guard, interrupt_disabler)
+    }
+
+    pub fn try_lock(&self) -> Option<InterruptDisableSpinlockGuard<T>> {
+        let interrupt_disabler = InterruptDisabler::new();
+
+        if let Some(guard) = self.0.try_lock() {
+            Some(InterruptDisableSpinlockGuard(guard, interrupt_disabler))
+        } else {
+            None
+        }
+    }
+
+    pub fn with_lock<U>(&self, f: impl FnOnce (&mut T) -> U) -> U {
+        let mut lock = self.lock();
+        f(lock.deref_mut())
     }
 
     pub fn try_with_lock<U>(&self, f: impl FnOnce(Option<&mut T>) -> U) -> U {
-        interrupts::without_interrupts(|| {
-            let mut lock = self.0.try_lock();
+        if let Some(mut lock) = self.try_lock() {
+            f(Some(lock.deref_mut()))
+        } else {
+            f(None)
+        }
+    }
+}
 
-            f(lock.as_mut().map(|lock| lock.deref_mut()))
-        })
+#[thread_local]
+static INTERRUPT_DISABLER_STATE: Cell<(usize, bool)> = Cell::new((0, false));
+
+pub struct InterruptDisabler(());
+
+impl InterruptDisabler {
+    pub fn new() -> InterruptDisabler {
+        let (n, was_enabled) = INTERRUPT_DISABLER_STATE.get();
+
+        let was_enabled = if n == 0 {
+            let was_enabled = interrupts::are_enabled();
+            interrupts::disable();
+            was_enabled
+        } else {
+            was_enabled
+        };
+
+        INTERRUPT_DISABLER_STATE.set((n + 1, was_enabled));
+        InterruptDisabler(())
+    }
+}
+
+impl !Send for InterruptDisabler {}
+
+impl Drop for InterruptDisabler {
+    fn drop(&mut self) {
+        assert!(!interrupts::are_enabled());
+
+        let (n, was_enabled) = INTERRUPT_DISABLER_STATE.get();
+        INTERRUPT_DISABLER_STATE.set((n - 1, was_enabled));
+
+        if n == 1 && was_enabled {
+            interrupts::enable();
+        };
+    }
+}
+
+pub struct InterruptDisableSpinlockGuard<'a, T>(spin::MutexGuard<'a, T>, InterruptDisabler);
+
+impl <'a, T> Deref for InterruptDisableSpinlockGuard<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.deref()
+    }
+}
+
+impl <'a, T> DerefMut for InterruptDisableSpinlockGuard<'a, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0.deref_mut()
     }
 }
 
