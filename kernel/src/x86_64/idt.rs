@@ -121,8 +121,13 @@ unsafe extern "C" fn handle_interrupt(frame: &mut InterruptFrame) {
 
     use crate::io::tty::TtyWriter;
     use crate::io::vt;
+    use crate::sched;
 
     let interrupt_num = frame.interrupt_num as u8;
+
+    if interrupt_num >= IRQS_START && interrupt_num < EXT_START {
+        sched::begin_interrupt();
+    };
 
     writeln!(TtyWriter::new(vt::get_terminal(0).unwrap().as_ref()), "Got interrupt {} - {}", interrupt_num, *CTR.get()).unwrap();
     *CTR.get() += 1;
@@ -131,6 +136,7 @@ unsafe extern "C" fn handle_interrupt(frame: &mut InterruptFrame) {
         panic!("Unhandled exception {} (error code {})", interrupt_num, frame.error_code);
     } else if interrupt_num < EXT_START {
         super::pic::send_eoi(interrupt_num - IRQS_START);
+        sched::end_interrupt();
     };
 }
 

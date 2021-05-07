@@ -14,11 +14,12 @@ entry_point!(kernel_main);
 #[cfg(not(test))]
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     use core::fmt::Write;
-    use test_os::{early_alloc, io, x86_64};
+    use test_os::{early_alloc, io, sched, x86_64};
 
     unsafe {
         early_alloc::init();
         x86_64::init_phase_1(boot_info);
+        sched::init();
     };
 
     writeln!(io::tty::TtyWriter::new(io::vt::get_terminal(0).unwrap().as_ref()), "{:#?} {:?}", boot_info, boot_info as *const BootInfo).unwrap();

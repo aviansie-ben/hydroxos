@@ -39,6 +39,7 @@ mod test {
         unsafe {
             crate::early_alloc::init();
             crate::x86_64::init_phase_1(boot_info);
+            crate::sched::init();
         };
         crate::test_harness_main();
         loop {};

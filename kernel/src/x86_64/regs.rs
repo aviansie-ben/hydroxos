@@ -44,6 +44,66 @@ pub struct SavedBasicRegisters {
     pub gs: u16
 }
 
+impl SavedBasicRegisters {
+    pub fn new() -> SavedBasicRegisters {
+        SavedBasicRegisters {
+            rip: 0,
+            rflags: 0,
+            gprs: [0; 16],
+            cs: 0,
+            ss: 0,
+            ds: 0,
+            es: 0,
+            fs: 0,
+            gs: 0
+        }
+    }
+
+    pub fn gpr(&self, reg: GeneralRegister) -> u64 {
+        self.gprs[reg as usize]
+    }
+
+    pub fn set_gpr(&mut self, reg: GeneralRegister, val: u64) {
+        self.gprs[reg as usize] = val;
+    }
+
+    pub fn new_kernel_thread(f: extern "C" fn (*mut u8) -> !, arg: *mut u8, stack: *mut u8) -> SavedBasicRegisters {
+        let mut regs = SavedBasicRegisters::new();
+
+        regs.rip = f as u64;
+        regs.set_gpr(GeneralRegister::Rdi, arg as u64);
+        regs.set_gpr(GeneralRegister::Rsp, stack as u64);
+
+        regs.cs = 0x08;
+        regs.ss = 0x10;
+        regs.ds = 0x10;
+        regs.es = 0x10;
+        regs.fs = 0x10;
+        regs.gs = 0x10;
+
+        regs
+    }
+
+    pub fn new_user_thread(f: u64, arg: u64, stack: u64) -> SavedBasicRegisters {
+        let mut regs = SavedBasicRegisters::new();
+
+        regs.rip = f;
+        regs.rflags |= 1 << 9; // IF
+        regs.rflags |= 0x3 << 12; // IOPL
+        regs.set_gpr(GeneralRegister::Rdi, arg);
+        regs.set_gpr(GeneralRegister::Rsp, stack);
+
+        regs.cs = 0x18;
+        regs.ss = 0x20;
+        regs.ds = 0x20;
+        regs.es = 0x20;
+        regs.fs = 0x20;
+        regs.gs = 0x20;
+
+        regs
+    }
+}
+
 fn to_ymm_val(lo: &[u8; 16], hi: &[u8; 16]) -> [u8; 32] {
     let mut result = [0; 32];
 
@@ -256,6 +316,29 @@ impl SavedExtendedRegisters {
 pub struct SavedRegisters {
     pub basic: SavedBasicRegisters,
     pub ext: SavedExtendedRegisters
+}
+
+impl SavedRegisters {
+    pub fn new() -> SavedRegisters {
+        SavedRegisters {
+            basic: SavedBasicRegisters::new(),
+            ext: SavedExtendedRegisters::new()
+        }
+    }
+
+    pub fn new_kernel_thread(f: extern "C" fn (*mut u8) -> !, arg: *mut u8, stack: *mut u8) -> SavedRegisters {
+        SavedRegisters {
+            basic: SavedBasicRegisters::new_kernel_thread(f, arg, stack),
+            ext: SavedExtendedRegisters::new()
+        }
+    }
+
+    pub fn new_user_thread(f: u64, arg: u64, stack: u64) -> SavedRegisters {
+        SavedRegisters {
+            basic: SavedBasicRegisters::new_user_thread(f, arg, stack),
+            ext: SavedExtendedRegisters::new()
+        }
+    }
 }
 
 pub unsafe fn init_xsave() {

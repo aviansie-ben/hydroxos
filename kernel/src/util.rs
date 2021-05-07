@@ -1,5 +1,8 @@
 use core::cell::{Cell, UnsafeCell};
 use core::ops::{Deref, DerefMut};
+use core::pin::Pin;
+use alloc::sync::{Arc, Weak};
+
 use x86_64::instructions::interrupts;
 
 #[repr(transparent)]
@@ -116,6 +119,14 @@ impl InterruptDisabler {
         INTERRUPT_DISABLER_STATE.set((n + 1, was_enabled));
         InterruptDisabler(())
     }
+
+    pub fn num_held() -> usize {
+        INTERRUPT_DISABLER_STATE.get().0
+    }
+
+    pub(crate) fn force_disable_after_release() {
+        INTERRUPT_DISABLER_STATE.set((InterruptDisabler::num_held(), false));
+    }
 }
 
 impl !Send for InterruptDisabler {}
@@ -167,4 +178,37 @@ impl <T: Clone> CloneOrPanic for T {
 
 pub fn clone_or_panic<T>(val: &T) -> T {
     val.clone_or_panic()
+}
+
+#[derive(Debug, Clone)]
+pub struct PinWeak<T: ?Sized>(Weak<T>);
+
+impl <T: ?Sized> PinWeak<T> {
+    pub fn downgrade(this: &Pin<Arc<T>>) -> PinWeak<T> {
+        unsafe {
+            PinWeak(Arc::downgrade(&Pin::into_inner_unchecked(this.clone())))
+        }
+    }
+
+    pub fn upgrade(&self) -> Option<Pin<Arc<T>>> {
+        unsafe {
+            self.0.upgrade().map(|arc| Pin::new_unchecked(arc))
+        }
+    }
+
+    pub fn as_ptr(&self) -> *const T {
+        self.0.as_ptr()
+    }
+
+    pub unsafe fn as_weak(&self) -> &Weak<T> {
+        &self.0
+    }
+
+    pub unsafe fn into_weak(self) -> Weak<T> {
+        self.0
+    }
+
+    pub unsafe fn from_weak(weak: Weak<T>) -> PinWeak<T> {
+        PinWeak(weak)
+    }
 }
