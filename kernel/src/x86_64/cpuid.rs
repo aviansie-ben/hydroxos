@@ -38,10 +38,12 @@ impl CpuFeatureSet {
 
         unsafe {
             asm!(
+                "mov rsi, rbx",
                 "mov eax, 1",
                 "cpuid",
+                "mov rbx, rsi",
                 out("eax") _,
-                out("ebx") _,
+                out("esi") _,
                 out("ecx") features[CpuFeature::FEATURE_VEC_IDX_01_ECX as usize],
                 out("edx") features[CpuFeature::FEATURE_VEC_IDX_01_EDX as usize]
             );
