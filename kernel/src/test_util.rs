@@ -2,10 +2,11 @@ use core::fmt::Write;
 use core::panic::PanicInfo;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use spin::Mutex;
 use uart_16550::SerialPort;
 
-static TEST_SERIAL: Mutex<SerialPort> = Mutex::new(unsafe { SerialPort::new(0x3f8) });
+use crate::util::InterruptDisableSpinlock;
+
+pub static TEST_SERIAL: InterruptDisableSpinlock<SerialPort> = InterruptDisableSpinlock::new(unsafe { SerialPort::new(0x3f8) });
 static IS_SKIPPED: AtomicBool = AtomicBool::new(false);
 static IS_TESTING: AtomicBool = AtomicBool::new(false);
 
