@@ -1,63 +1,20 @@
-#![no_std]
 #![no_main]
+#![no_std]
 
-#![feature(asm)]
-#![feature(alloc_error_handler)]
 #![feature(custom_test_frameworks)]
-#![feature(exclusive_range_pattern)]
-#![feature(naked_functions)]
-#![feature(negative_impls)]
-#![feature(slice_ptr_len)]
-#![feature(thread_local)]
-
-#![allow(incomplete_features)]
-#![feature(specialization)]
 
 #![reexport_test_harness_main = "test_harness_main"]
-#![test_runner(crate::test_util::run_tests)]
-
-extern crate alloc;
+#![test_runner(test_os::test_util::run_tests)]
 
 use core::panic::PanicInfo;
 use bootloader::{BootInfo, entry_point};
 
-pub mod early_alloc;
-pub mod future;
-pub mod io;
-pub mod panic;
-pub mod frame_alloc;
-pub mod sched;
-pub mod util;
-pub mod x86_64;
-
-#[cfg(test)]
-pub mod test_util;
-
-#[cfg(test)]
-entry_point!(test_main);
-
-#[cfg(test)]
-pub fn test_main(boot_info: &'static BootInfo) -> ! {
-    unsafe {
-        early_alloc::init();
-        x86_64::init_phase_1(boot_info);
-    };
-    test_harness_main();
-    loop {};
-}
-
-#[cfg(test)]
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    test_util::handle_test_panic(info);
-}
-
-#[cfg(not(test))]
 entry_point!(kernel_main);
 
 #[cfg(not(test))]
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     use core::fmt::Write;
+    use test_os::{early_alloc, io, x86_64};
 
     unsafe {
         early_alloc::init();
@@ -71,10 +28,16 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     };
 }
 
-#[cfg(not(test))]
+#[cfg(test)]
+fn kernel_main(_: &'static BootInfo) -> ! {
+    // We don't have any tests on the binary right now
+    test_os::test_util::exit(0);
+}
+
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    use ::x86_64::instructions::interrupts;
+    use x86_64::instructions::interrupts;
+    use test_os::panic;
 
     interrupts::disable();
     panic::show_panic_crash_screen(info);
