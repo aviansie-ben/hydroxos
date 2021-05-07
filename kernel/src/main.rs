@@ -61,7 +61,6 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     unsafe {
         early_alloc::init();
-        io::vt::init(x86_64::create_primary_display(boot_info), 1);
         x86_64::init_phase_1(boot_info);
     };
 

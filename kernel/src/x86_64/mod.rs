@@ -1,6 +1,8 @@
+use core::ptr;
+
 use bootloader::BootInfo;
 
-use crate::io::vt::{VirtualTerminalDisplay};
+use crate::io::vt::VirtualTerminalDisplay;
 
 pub mod cpuid;
 pub mod dev;
@@ -24,10 +26,27 @@ unsafe fn init_sse() {
     asm!("fninit");
 }
 
+unsafe fn init_bootstrap_tls(boot_info: &'static BootInfo) {
+    if let Some(tls_template) = boot_info.tls_template() {
+        assert!(tls_template.file_size <= tls_template.mem_size);
+
+        let tls = crate::early_alloc::alloc(tls_template.mem_size as usize + 8, 16);
+        let tib = tls.offset(tls_template.mem_size as isize);
+
+        ptr::copy_nonoverlapping(tls_template.start_addr as *mut u8, tls, tls_template.file_size as usize);
+        ptr::write::<*mut u8>(tib as *mut *mut u8, tib as *mut u8);
+
+        x86_64::registers::model_specific::Msr::new(0xc0000100).write(tib as u64);
+    };
+}
+
 pub unsafe fn init_phase_1(boot_info: &'static BootInfo) {
     use x86_64::instructions::interrupts;
 
+    init_bootstrap_tls(boot_info);
     cpuid::init_bsp();
+
+    crate::io::vt::init(create_primary_display(boot_info), 1);
 
     page::init_phys_mem_base(boot_info.physical_memory_offset as *mut u8);
     idt::init_bsp();
