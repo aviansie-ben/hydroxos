@@ -1,5 +1,5 @@
 [build]
-target = ".cargo/x86_64-test_os-kernel.json"
+target = ".cargo/x86_64-hydroxos-kernel.json"
 
 [target.'cfg(target_os = "none")']
 runner = "bootimage runner"

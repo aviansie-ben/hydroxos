@@ -27,6 +27,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e78d4f1cc4ae33bbfc157ed5d5a5ef3bc29227303d595861deb238fcec4e9457"
 
 [[package]]
+name = "hydroxos_kernel"
+version = "0.1.0"
+dependencies = [
+ "bootloader",
+ "itertools",
+ "spin",
+ "uart_16550",
+ "x86_64",
+]
+
+[[package]]
 name = "itertools"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -40,17 +51,6 @@ name = "spin"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13287b4da9d1207a4f4929ac390916d64eacfe236a487e9a9f5b3be392be5162"
-
-[[package]]
-name = "test_os"
-version = "0.1.0"
-dependencies = [
- "bootloader",
- "itertools",
- "spin",
- "uart_16550",
- "x86_64",
-]
 
 [[package]]
 name = "uart_16550"

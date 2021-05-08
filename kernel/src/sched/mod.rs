@@ -1,4 +1,4 @@
-//! The TestOS scheduler.
+//! The HydroxOS scheduler.
 //!
 //! This module contains the kernel's scheduler, which is responsible for keeping track of processes and threads running on the machine and
 //! facilitating context switching between them from interrupt handlers.
