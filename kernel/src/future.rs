@@ -1,14 +1,18 @@
 use core::marker::PhantomData;
 use core::mem;
 use core::ptr;
+use alloc::boxed::Box;
 
 use x86_64::instructions::interrupts;
 
+use crate::sched::wait::ThreadWaitList;
 use crate::util::{InterruptDisableSpinlock, InterruptDisableSpinlockGuard};
+use core::pin::Pin;
 
 struct FutureWait<T> {
     refs: usize,
-    val: Option<T>
+    val: Option<T>,
+    wait: ThreadWaitList
 }
 
 #[derive(Debug)]
@@ -22,8 +26,11 @@ pub struct Future<T>(FutureInternal<T>);
 
 impl <T> Future<T> {
     pub fn new() -> (Future<T>, FutureWriter<T>) {
-        // TODO Allocate IoFutureWait
-        let wait = core::ptr::null();
+        let wait = Box::leak(Box::new(InterruptDisableSpinlock::new(FutureWait {
+            refs: 1,
+            val: None,
+            wait: ThreadWaitList::new()
+        })));
 
         (
             Future(FutureInternal::Waiting(wait, PhantomData)),
@@ -51,8 +58,7 @@ impl <T> Future<T> {
                         let val = wait.val.take().unwrap();
 
                         mem::drop(wait_guard);
-                        ptr::drop_in_place(ptr as *mut InterruptDisableSpinlock<FutureWait<T>>);
-                        // TODO Free IoFutureWait
+                        Box::from_raw(ptr as *mut InterruptDisableSpinlock<FutureWait<T>>);
 
                         val
                     } else {
@@ -82,9 +88,10 @@ impl <T> Future<T> {
             let done = self.do_action(|state| match state {
                 Ok(_) => true,
                 Err(wait) => {
-                    // TODO Enqueue current thread on the wait queue
+                    let suspend = unsafe { Pin::new_unchecked(&wait.wait) }.wait();
                     mem::drop(wait);
-                    // TODO Put the current thread to sleep
+                    suspend.suspend();
+
                     false
                 }
             });
@@ -158,8 +165,7 @@ impl <T> Drop for Future<T> {
                 wait.refs -= 1;
                 if wait.refs == 0 {
                     mem::drop(wait);
-                    ptr::drop_in_place(ptr as *mut InterruptDisableSpinlock<FutureWait<T>>);
-                    // TODO Free IoFutureWait
+                    Box::from_raw(ptr as *mut InterruptDisableSpinlock<FutureWait<T>>);
                 };
             },
             _ => {}
@@ -181,11 +187,10 @@ impl <T> FutureWriter<T> {
             wait.refs -= 1;
             if wait.refs != 0 {
                 wait.val = Some(val);
-                // TODO Wake up threads waiting on this future
+                wait.wait.wake_all();
             } else {
                 mem::drop(wait);
-                ptr::drop_in_place(ptr as *mut InterruptDisableSpinlock<FutureWait<T>>);
-                // TODO Free IoFutureWait
+                Box::from_raw(self.wait as *mut InterruptDisableSpinlock<FutureWait<T>>);
             };
 
             mem::forget(self);
