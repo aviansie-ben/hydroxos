@@ -11,7 +11,8 @@ use alloc::boxed::Box;
 use alloc::sync::Arc;
 
 use super::wait::ThreadWaitState;
-use crate::util::{InterruptDisabler, InterruptDisableSpinlock, InterruptDisableSpinlockGuard, PinWeak, SharedUnsafeCell};
+use crate::sync::uninterruptible::{InterruptDisabler, UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
+use crate::util::{PinWeak, SharedUnsafeCell};
 use crate::x86_64::idt::InterruptFrame;
 use crate::x86_64::regs::SavedRegisters;
 
@@ -37,14 +38,14 @@ impl !Unpin for ProcessInternal {}
 /// ensure this.
 pub struct Process {
     pid: u64,
-    internal: InterruptDisableSpinlock<ProcessInternal>
+    internal: UninterruptibleSpinlock<ProcessInternal>
 }
 
 impl Process {
     fn create_internal(pid: u64) -> Pin<Arc<Process>> {
         Arc::pin(Process {
             pid,
-            internal: InterruptDisableSpinlock::new(ProcessInternal {
+            internal: UninterruptibleSpinlock::new(ProcessInternal {
                 next_thread_id: 0,
                 threads_head: None,
                 threads_tail: ptr::null(),
@@ -124,7 +125,7 @@ impl Process {
 /// Processor interrupts are automatically disabled on the current core while a process lock is held to allow for context switching from
 /// within interrupt handlers. For this reason, critical sections holding such locks should be as short as reasonably possible.
 pub struct ProcessLock<'a> {
-    guard: InterruptDisableSpinlockGuard<'a, ProcessInternal>,
+    guard: UninterruptibleSpinlockGuard<'a, ProcessInternal>,
     process: &'a Process
 }
 
@@ -312,7 +313,7 @@ static CURRENT_THREAD: UnsafeCell<Option<Pin<Arc<Thread>>>> = UnsafeCell::new(No
 pub struct Thread {
     process: PinWeak<Process>,
     thread_id: u64,
-    internal: InterruptDisableSpinlock<ThreadInternal>,
+    internal: UninterruptibleSpinlock<ThreadInternal>,
     process_internal: SharedUnsafeCell<ThreadProcessInternal>
 }
 
@@ -323,7 +324,7 @@ impl Thread {
         let thread = Arc::pin(Thread {
             process: PinWeak::downgrade(&process_lock.process.as_arc()),
             thread_id: process_lock.guard.next_thread_id,
-            internal: InterruptDisableSpinlock::new(ThreadInternal {
+            internal: UninterruptibleSpinlock::new(ThreadInternal {
                 state: ThreadState::Suspended,
                 regs
             }),
@@ -375,9 +376,9 @@ impl Thread {
     ///
     /// # Panics
     ///
-    /// This method will panic if any [`InterruptDisabler`](crate::util::InterruptDisabler) values currently exist on this thread, aside
-    /// from the one held in the thread lock passed into this method. Context switching while an interrupt-disabling lock guard is held
-    /// could result in a deadlock due to the new thread trying to acquire a lock that was held prior to a context switch.
+    /// This method will panic if any [`InterruptDisabler`](InterruptDisabler) values currently exist on this thread, aside from the one
+    /// held in the thread lock passed into this method. Context switching while an uninterruptible lock guard is held could result in a
+    /// deadlock due to the new thread trying to acquire a lock that was held prior to a context switch.
     ///
     /// # Safety
     ///
@@ -477,7 +478,7 @@ impl fmt::Display for ThreadDebugName<'_> {
 /// Processor interrupts are automatically disabled on the current core while a thread lock is held to allow for context switching from
 /// within interrupt handlers. For this reason, critical sections holding such locks should be as short as reasonably possible.
 pub struct ThreadLock<'a> {
-    guard: InterruptDisableSpinlockGuard<'a, ThreadInternal>,
+    guard: UninterruptibleSpinlockGuard<'a, ThreadInternal>,
     thread: &'a Thread
 }
 

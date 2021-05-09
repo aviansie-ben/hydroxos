@@ -1,6 +1,6 @@
 use core::fmt;
 
-use crate::future::Future;
+use crate::sync::Future;
 
 pub trait Tty {
     unsafe fn write(&self, bytes: *const [u8]) -> Future<Result<(), ()>>;

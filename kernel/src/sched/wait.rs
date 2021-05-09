@@ -4,8 +4,8 @@ use core::mem::{ManuallyDrop, MaybeUninit};
 use core::pin::Pin;
 use core::ptr;
 
+use crate::sync::UninterruptibleSpinlock;
 use super::task::{Thread, ThreadLock, ThreadState};
-use crate::util::InterruptDisableSpinlock;
 
 /// State information for a thread which is waiting on a wait list.
 #[derive(Debug)]
@@ -80,9 +80,10 @@ impl ThreadWait {
     ///
     /// # Panics
     ///
-    /// This method will panic if any [`InterruptDisabler`](crate::util::InterruptDisabler) values currently exist on this thread, aside
-    /// from the single one owned by the thread lock that is part of this object itself. Context switching while an interrupt-disabling lock
-    /// guard is held could result in a deadlock due to the new thread trying to acquire a lock that was held prior to a context switch.
+    /// This method will panic if any [`InterruptDisabler`](crate::sync::uninterruptible::InterruptDisabler) values currently exist on this
+    /// thread, aside from the single one owned by the thread lock that is part of this object itself. Context switching while an
+    /// uninterruptible lock guard is held could result in a deadlock due to the new thread trying to acquire a lock that was held prior to
+    /// a context switch.
     pub fn suspend(self) {
         unsafe {
             let this = ManuallyDrop::new(self);
@@ -99,7 +100,7 @@ impl Drop for ThreadWait {
 
 /// A wait list onto which threads can enqueue themselves to be woken up later.
 pub struct ThreadWaitList {
-    internal: InterruptDisableSpinlock<ThreadWaitListInternal>
+    internal: UninterruptibleSpinlock<ThreadWaitListInternal>
 }
 
 impl !Unpin for ThreadWaitList {}
@@ -108,7 +109,7 @@ impl ThreadWaitList {
     /// Creates an empty wait list.
     pub const fn new() -> ThreadWaitList {
         ThreadWaitList {
-            internal: InterruptDisableSpinlock::new(ThreadWaitListInternal {
+            internal: UninterruptibleSpinlock::new(ThreadWaitListInternal {
                 head: ptr::null(),
                 tail: ptr::null()
             })

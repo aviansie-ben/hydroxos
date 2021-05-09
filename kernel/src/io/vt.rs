@@ -5,8 +5,7 @@ use core::iter::FromIterator;
 
 use crate::x86_64::dev::vgabuf;
 use crate::io::tty::Tty;
-use crate::future::Future;
-use crate::util::InterruptDisableSpinlock;
+use crate::sync::{Future, UninterruptibleSpinlock};
 
 const MAX_CSI_LENGTH: usize = 64;
 
@@ -219,7 +218,7 @@ impl VirtualTerminalInternals {
 }
 
 #[derive(Debug)]
-pub struct VirtualTerminal(InterruptDisableSpinlock<VirtualTerminalInternals>);
+pub struct VirtualTerminal(UninterruptibleSpinlock<VirtualTerminalInternals>);
 
 impl Tty for VirtualTerminal {
     unsafe fn write(&self, bytes: *const [u8]) -> Future<Result<(), ()>> {
@@ -248,7 +247,7 @@ impl VirtualTerminal {
         assert!(height > 0);
         assert!(width.checked_mul(height).is_some());
 
-        VirtualTerminal(InterruptDisableSpinlock::new(VirtualTerminalInternals {
+        VirtualTerminal(UninterruptibleSpinlock::new(VirtualTerminalInternals {
             buf: Vec::from_iter(itertools::repeat_n(VTChar {
                 ch: ' ',
                 fg_color: vgabuf::Color::White,
@@ -312,8 +311,8 @@ impl VirtualTerminalDisplay {
     }
 }
 
-static VIRTUAL_TERMINALS: InterruptDisableSpinlock<Vec<Arc<VirtualTerminal>>> = InterruptDisableSpinlock::new(Vec::new());
-static VIRTUAL_DISPLAYS: InterruptDisableSpinlock<Vec<(VirtualTerminalDisplay, usize)>> = InterruptDisableSpinlock::new(Vec::new());
+static VIRTUAL_TERMINALS: UninterruptibleSpinlock<Vec<Arc<VirtualTerminal>>> = UninterruptibleSpinlock::new(Vec::new());
+static VIRTUAL_DISPLAYS: UninterruptibleSpinlock<Vec<(VirtualTerminalDisplay, usize)>> = UninterruptibleSpinlock::new(Vec::new());
 
 pub fn init(primary_display: VirtualTerminalDisplay, num_terminals: usize) {
     assert!(num_terminals > 0);

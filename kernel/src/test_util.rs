@@ -4,9 +4,9 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use uart_16550::SerialPort;
 
-use crate::util::InterruptDisableSpinlock;
+use crate::sync::UninterruptibleSpinlock;
 
-pub static TEST_SERIAL: InterruptDisableSpinlock<SerialPort> = InterruptDisableSpinlock::new(unsafe { SerialPort::new(0x3f8) });
+pub static TEST_SERIAL: UninterruptibleSpinlock<SerialPort> = UninterruptibleSpinlock::new(unsafe { SerialPort::new(0x3f8) });
 static IS_SKIPPED: AtomicBool = AtomicBool::new(false);
 static IS_TESTING: AtomicBool = AtomicBool::new(false);
 

@@ -19,11 +19,11 @@
 extern crate alloc;
 
 pub mod early_alloc;
-pub mod future;
 pub mod io;
 pub mod panic;
 pub mod frame_alloc;
 pub mod sched;
+pub mod sync;
 pub mod util;
 pub mod x86_64;
 pub mod test_util;
