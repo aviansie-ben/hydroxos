@@ -1,5 +1,7 @@
 //! Data structures used by the scheduler to track processes and threads.
 
+use alloc::boxed::Box;
+use alloc::sync::Arc;
 use core::cell::UnsafeCell;
 use core::fmt;
 use core::marker::PhantomData;
@@ -7,8 +9,6 @@ use core::mem::{self, MaybeUninit};
 use core::pin::Pin;
 use core::ptr;
 use core::sync::atomic::{AtomicU64, Ordering};
-use alloc::boxed::Box;
-use alloc::sync::Arc;
 
 use super::wait::ThreadWaitState;
 use crate::sync::uninterruptible::{InterruptDisabler, UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
@@ -129,13 +129,13 @@ pub struct ProcessLock<'a> {
     process: &'a Process
 }
 
-impl <'a> ProcessLock<'a> {
+impl<'a> ProcessLock<'a> {
     /// Gets an iterator that returns all threads belonging to this process.
-    pub fn threads<'b>(&'b self) -> impl Iterator<Item=Pin<Arc<Thread>>> + 'b {
+    pub fn threads<'b>(&'b self) -> impl Iterator<Item = Pin<Arc<Thread>>> + 'b {
         ProcessThreadIterator(self.guard.threads_head.clone(), PhantomData)
     }
 
-    fn create_kernel_thread_internal(&mut self, f: extern "C" fn (*mut u8) -> !, arg: *mut u8, stack_size: usize) -> Pin<Arc<Thread>> {
+    fn create_kernel_thread_internal(&mut self, f: extern "C" fn(*mut u8) -> !, arg: *mut u8, stack_size: usize) -> Pin<Arc<Thread>> {
         let stack = crate::early_alloc::alloc(stack_size, 16); // TODO Allocate pages instead. Place guard page.
         Thread::create_internal(self, SavedRegisters::new_kernel_thread(f, arg, unsafe { stack.add(stack_size) }))
     }
@@ -147,8 +147,8 @@ impl <'a> ProcessLock<'a> {
     ///
     /// This method can only be used on the kernel process. For safety reasons, creating kernel-mode threads in user-space processes is not
     /// allowed and attempting to do so will cause a panic.
-    pub fn create_kernel_thread<F: FnOnce () -> ()>(&mut self, f: F, stack_size: usize) -> Pin<Arc<Thread>> {
-        extern "C" fn run<F: FnOnce () -> ()>(ptr: *mut u8) -> ! {
+    pub fn create_kernel_thread<F: FnOnce() -> ()>(&mut self, f: F, stack_size: usize) -> Pin<Arc<Thread>> {
+        extern "C" fn run<F: FnOnce() -> ()>(ptr: *mut u8) -> ! {
             unsafe {
                 let f = *Box::from_raw(ptr as *mut F);
 
@@ -257,7 +257,7 @@ impl <'a> ProcessLock<'a> {
 
 struct ProcessThreadIterator<'a, 'b>(Option<Pin<Arc<Thread>>>, PhantomData<&'a ProcessLock<'b>>);
 
-impl <'a, 'b> Iterator for ProcessThreadIterator<'a, 'b> {
+impl<'a, 'b> Iterator for ProcessThreadIterator<'a, 'b> {
     type Item = Pin<Arc<Thread>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -355,9 +355,7 @@ impl Thread {
     /// will return [`None`]. If an interrupt is not currently being handled, then this method will return the currently executing thread.
     pub fn current_interrupted() -> Option<Pin<Arc<Thread>>> {
         // SAFETY: CURRENT_THREAD is thread-local and no references to it ever escape this module
-        unsafe {
-            (*CURRENT_THREAD.get()).clone()
-        }
+        unsafe { (*CURRENT_THREAD.get()).clone() }
     }
 
     /// Gets the thread that is executing on the current core.
@@ -482,7 +480,7 @@ pub struct ThreadLock<'a> {
     thread: &'a Thread
 }
 
-impl <'a> ThreadLock<'a> {
+impl<'a> ThreadLock<'a> {
     /// Gets a reference to the current state of this thread.
     pub fn state(&self) -> &ThreadState {
         &self.guard.state

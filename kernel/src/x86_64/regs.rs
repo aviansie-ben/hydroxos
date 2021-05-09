@@ -67,7 +67,7 @@ impl SavedBasicRegisters {
         self.gprs[reg as usize] = val;
     }
 
-    pub fn new_kernel_thread(f: extern "C" fn (*mut u8) -> !, arg: *mut u8, stack: *mut u8) -> SavedBasicRegisters {
+    pub fn new_kernel_thread(f: extern "C" fn(*mut u8) -> !, arg: *mut u8, stack: *mut u8) -> SavedBasicRegisters {
         let mut regs = SavedBasicRegisters::new();
 
         regs.rip = f as u64;
@@ -109,11 +109,11 @@ fn to_ymm_val(lo: &[u8; 16], hi: &[u8; 16]) -> [u8; 32] {
 
     for i in 0..16 {
         result[i] = lo[i];
-    };
+    }
 
     for i in 0..16 {
         result[i + 16] = hi[i];
-    };
+    }
 
     result
 }
@@ -124,11 +124,11 @@ fn from_ymm_val(val: &[u8; 32]) -> ([u8; 16], [u8; 16]) {
 
     for i in 0..16 {
         lo[i] = val[i];
-    };
+    }
 
     for i in 0..16 {
         hi[i] = val[i + 16];
-    };
+    }
 
     (lo, hi)
 }
@@ -141,9 +141,7 @@ pub struct XSaveAvx {
 
 impl XSaveAvx {
     fn new() -> XSaveAvx {
-        XSaveAvx {
-            ymm_h: [[0; 16]; 16]
-        }
+        XSaveAvx { ymm_h: [[0; 16]; 16] }
     }
 }
 
@@ -326,7 +324,7 @@ impl SavedRegisters {
         }
     }
 
-    pub fn new_kernel_thread(f: extern "C" fn (*mut u8) -> !, arg: *mut u8, stack: *mut u8) -> SavedRegisters {
+    pub fn new_kernel_thread(f: extern "C" fn(*mut u8) -> !, arg: *mut u8, stack: *mut u8) -> SavedRegisters {
         SavedRegisters {
             basic: SavedBasicRegisters::new_kernel_thread(f, arg, stack),
             ext: SavedExtendedRegisters::new()
@@ -343,6 +341,7 @@ impl SavedRegisters {
 
 pub unsafe fn init_xsave() {
     use x86_64::registers::control::{Cr4, Cr4Flags};
+
     use crate::x86_64::cpuid::{self, CpuFeature};
 
     if cpuid::get_minimum_features().supports(CpuFeature::XSAVE) {
@@ -375,38 +374,34 @@ pub unsafe fn init_xsave() {
 
 #[cfg(test)]
 mod test {
+    use super::super::cpuid::{self, CpuFeature};
+    use super::SavedExtendedRegisters;
     use crate::test_util::skip;
 
-    use super::SavedExtendedRegisters;
-    use super::super::cpuid::{self, CpuFeature};
-
     pub const ST_ZERO: [u8; 10] = [0; 10];
-    pub const ST_TEST: [u8; 10] = [
-        0x01, 0x02, 0x03, 0x04, 0x05,
-        0x06, 0x07, 0x08, 0x09, 0x0A
-    ];
+    pub const ST_TEST: [u8; 10] = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A];
 
     pub const XMM_ZERO: [u8; 16] = [0; 16];
     pub const XMM0_VAL: [u8; 16] = [
-        0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
+        0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, //
         0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10
     ];
     pub const XMM14_VAL: [u8; 16] = [
-        0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF,
+        0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF, //
         0xCA, 0xFE, 0xDE, 0xAD, 0xCA, 0xFE, 0xD0, 0x0D
     ];
 
     pub const YMM_ZERO: [u8; 32] = [0; 32];
     pub const YMM0_VAL: [u8; 32] = [
-        0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
-        0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10,
-        0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10,
+        0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, //
+        0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10, //
+        0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10, //
         0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF
     ];
     pub const YMM14_VAL: [u8; 32] = [
-        0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF,
-        0xCA, 0xFE, 0xDE, 0xAD, 0xCA, 0xFE, 0xD0, 0x0D,
-        0xCA, 0xFE, 0xD0, 0x0D, 0xCA, 0xFE, 0xDE, 0xAD,
+        0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF, //
+        0xCA, 0xFE, 0xDE, 0xAD, 0xCA, 0xFE, 0xD0, 0x0D, //
+        0xCA, 0xFE, 0xD0, 0x0D, 0xCA, 0xFE, 0xDE, 0xAD, //
         0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF
     ];
 

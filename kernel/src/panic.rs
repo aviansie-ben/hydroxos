@@ -12,7 +12,7 @@ pub fn show_panic_crash_screen(info: &PanicInfo) -> ! {
 
     let _ = write!(w, "{}", info);
 
-    loop {};
+    loop {}
 }
 
 #[alloc_error_handler]

@@ -14,7 +14,10 @@ pub struct StackFrameAllocator {
 
 impl StackFrameAllocator {
     pub const fn new() -> StackFrameAllocator {
-        StackFrameAllocator { num_frames_available: 0, stack_top: core::ptr::null_mut() }
+        StackFrameAllocator {
+            num_frames_available: 0,
+            stack_top: core::ptr::null_mut()
+        }
     }
 
     fn frames_on_top_stack_frame(&self) -> usize {
@@ -83,12 +86,12 @@ unsafe impl Send for StackFrameAllocator {}
 
 #[cfg(test)]
 mod tests {
-    use x86_64::{PhysAddr, VirtAddr};
     use x86_64::structures::paging::mapper::{OffsetPageTable, Translate, TranslateResult};
+    use x86_64::{PhysAddr, VirtAddr};
 
-    use crate::x86_64::page::{get_phys_mem_base, get_phys_mem_ptr_mut};
-    use crate::util::PageAligned;
     use super::{StackFrameAllocator, NUM_FRAMES_PER_PAGE};
+    use crate::util::PageAligned;
+    use crate::x86_64::page::{get_phys_mem_base, get_phys_mem_ptr_mut};
 
     static TEST_AREA: PageAligned<[[u8; crate::x86_64::page::PAGE_SIZE]; 10]> = PageAligned::new([[0; crate::x86_64::page::PAGE_SIZE]; 10]);
 
@@ -135,19 +138,19 @@ mod tests {
                 for _ in (0..NUM_FRAMES_PER_PAGE).step_by(2) {
                     allocator.push(get_test_page(i));
                     allocator.push(get_test_page(i + 1));
-                };
+                }
 
                 assert_eq!((i + 1) * NUM_FRAMES_PER_PAGE, allocator.num_frames_available());
-            };
+            }
 
             for i in (0..(TEST_AREA.len() - 1)).rev() {
                 for _ in (0..NUM_FRAMES_PER_PAGE).step_by(2) {
                     assert_eq!(Some(get_test_page(i + 1)), allocator.pop());
                     assert_eq!(Some(get_test_page(i)), allocator.pop());
-                };
+                }
 
                 assert_eq!(i * NUM_FRAMES_PER_PAGE, allocator.num_frames_available());
-            };
+            }
 
             assert_eq!(None, allocator.pop());
         };

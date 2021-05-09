@@ -1,19 +1,19 @@
 #![no_main]
 #![no_std]
-
 #![feature(custom_test_frameworks)]
-
 #![reexport_test_harness_main = "test_harness_main"]
 #![test_runner(hydroxos_kernel::test_util::run_tests)]
 
 use core::panic::PanicInfo;
-use bootloader::{BootInfo, entry_point};
+
+use bootloader::{entry_point, BootInfo};
 
 entry_point!(kernel_main);
 
 #[cfg(not(test))]
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     use core::fmt::Write;
+
     use hydroxos_kernel::{early_alloc, io, sched, x86_64};
 
     unsafe {
@@ -22,11 +22,17 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         sched::init();
     };
 
-    writeln!(io::tty::TtyWriter::new(io::vt::get_terminal(0).unwrap().as_ref()), "{:#?} {:?}", boot_info, boot_info as *const BootInfo).unwrap();
+    writeln!(
+        io::tty::TtyWriter::new(io::vt::get_terminal(0).unwrap().as_ref()),
+        "{:#?} {:?}",
+        boot_info,
+        boot_info as *const BootInfo
+    )
+    .unwrap();
 
     loop {
         ::x86_64::instructions::hlt();
-    };
+    }
 }
 
 #[cfg(test)]
@@ -37,8 +43,8 @@ fn kernel_main(_: &'static BootInfo) -> ! {
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    use x86_64::instructions::interrupts;
     use hydroxos_kernel::panic;
+    use x86_64::instructions::interrupts;
 
     interrupts::disable();
     panic::show_panic_crash_screen(info);

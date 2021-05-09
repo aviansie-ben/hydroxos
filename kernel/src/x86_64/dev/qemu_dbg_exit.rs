@@ -9,6 +9,6 @@ impl QemuExitDevice {
 
     pub fn exit(&mut self, code: u32) -> ! {
         unsafe { Port::new(self.0).write(code) };
-        loop {};
+        loop {}
     }
 }

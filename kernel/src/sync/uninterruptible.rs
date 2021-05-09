@@ -92,7 +92,7 @@ impl Drop for InterruptDisabler {
 #[derive(Debug)]
 pub struct UninterruptibleSpinlock<T>(spin::Mutex<T>);
 
-impl <T> UninterruptibleSpinlock<T> {
+impl<T> UninterruptibleSpinlock<T> {
     /// Creates a new uninterruptible spinlock containing the provided value.
     pub const fn new(val: T) -> UninterruptibleSpinlock<T> {
         UninterruptibleSpinlock(spin::Mutex::new(val))
@@ -140,7 +140,7 @@ impl <T> UninterruptibleSpinlock<T> {
 
     /// Disables interrupts and locks this [`UninterruptibleSpinlock`], then calls the provided function with the underlying data. Once the
     /// callback returns, interrupts are re-enabled (if applicable) and the spinlock is re-locked.
-    pub fn with_lock<U>(&self, f: impl FnOnce (&mut T) -> U) -> U {
+    pub fn with_lock<U>(&self, f: impl FnOnce(&mut T) -> U) -> U {
         let mut lock = self.lock();
         f(lock.deref_mut())
     }
@@ -162,7 +162,7 @@ impl <T> UninterruptibleSpinlock<T> {
 /// applicable) when dropped.
 pub struct UninterruptibleSpinlockGuard<'a, T>(spin::MutexGuard<'a, T>, InterruptDisabler);
 
-impl <'a, T> Deref for UninterruptibleSpinlockGuard<'a, T> {
+impl<'a, T> Deref for UninterruptibleSpinlockGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -170,7 +170,7 @@ impl <'a, T> Deref for UninterruptibleSpinlockGuard<'a, T> {
     }
 }
 
-impl <'a, T> DerefMut for UninterruptibleSpinlockGuard<'a, T> {
+impl<'a, T> DerefMut for UninterruptibleSpinlockGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.0.deref_mut()
     }

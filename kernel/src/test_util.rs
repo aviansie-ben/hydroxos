@@ -14,7 +14,7 @@ pub trait Test {
     fn run(&self);
 }
 
-impl <T: Fn ()> Test for T {
+impl<T: Fn()> Test for T {
     fn run(&self) {
         write!(TEST_SERIAL.lock(), "test {} ... ", core::any::type_name::<T>()).unwrap();
         IS_SKIPPED.store(false, Ordering::Relaxed);
@@ -33,7 +33,7 @@ pub fn run_tests(tests: &[&dyn Test]) -> ! {
     writeln!(TEST_SERIAL.lock(), "Running {} tests...", tests.len()).unwrap();
     for test in tests {
         test.run();
-    };
+    }
 
     exit(0);
 }

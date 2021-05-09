@@ -2,15 +2,24 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::convert::TryFrom;
 use core::sync::atomic::{AtomicPtr, Ordering};
 
-use crate::util::{SharedUnsafeCell, PageAligned};
+use crate::util::{PageAligned, SharedUnsafeCell};
 
 const EARLY_ALLOC_SIZE: usize = 1 * 1024 * 1024;
 
-static EARLY_ALLOC_AREA: PageAligned<SharedUnsafeCell<[u8; EARLY_ALLOC_SIZE]>> = PageAligned::new(SharedUnsafeCell::new([0; EARLY_ALLOC_SIZE]));
+static EARLY_ALLOC_AREA: PageAligned<SharedUnsafeCell<[u8; EARLY_ALLOC_SIZE]>> =
+    PageAligned::new(SharedUnsafeCell::new([0; EARLY_ALLOC_SIZE]));
 static EARLY_ALLOC_MARK: AtomicPtr<u8> = AtomicPtr::new(core::ptr::null_mut());
 
 pub fn init() {
-    if EARLY_ALLOC_MARK.compare_exchange(core::ptr::null_mut(), EARLY_ALLOC_AREA.get() as *mut u8, Ordering::Relaxed, Ordering::Relaxed).is_err() {
+    if EARLY_ALLOC_MARK
+        .compare_exchange(
+            core::ptr::null_mut(),
+            EARLY_ALLOC_AREA.get() as *mut u8,
+            Ordering::Relaxed,
+            Ordering::Relaxed
+        )
+        .is_err()
+    {
         panic!("Attempt to initialize early memory allocation more than once");
     };
 }
@@ -34,7 +43,10 @@ pub fn alloc(size: usize, align: usize) -> *mut u8 {
                 panic!("Out of early allocation memory");
             };
 
-            if EARLY_ALLOC_MARK.compare_exchange(mark, mark.offset(alloc_size), Ordering::Relaxed, Ordering::Relaxed).is_ok() {
+            if EARLY_ALLOC_MARK
+                .compare_exchange(mark, mark.offset(alloc_size), Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
                 break mark.offset(align_offset as isize);
             };
         }

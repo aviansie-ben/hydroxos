@@ -69,7 +69,7 @@ impl TextBuffer {
             unsafe {
                 core::ptr::write_volatile(self.buf.add(i), clear_char);
             };
-        };
+        }
     }
 
     pub fn set(&mut self, x: usize, y: usize, ch: u8, fg_color: Color, bg_color: Color) {
@@ -77,13 +77,10 @@ impl TextBuffer {
         assert!(y < self.height);
 
         unsafe {
-            core::ptr::write_volatile(
-                self.buf.add(y * self.width + x),
-                ScreenChar {
-                    ch,
-                    color: ColorCode::new(fg_color, bg_color)
-                }
-            );
+            core::ptr::write_volatile(self.buf.add(y * self.width + x), ScreenChar {
+                ch,
+                color: ColorCode::new(fg_color, bg_color)
+            });
         }
     }
 
@@ -136,7 +133,7 @@ pub struct Writer<'a> {
     buf: &'a mut TextBuffer
 }
 
-impl <'a> Writer<'a> {
+impl<'a> Writer<'a> {
     pub fn new(buf: &'a mut TextBuffer) -> Self {
         Writer {
             x: 0,
@@ -174,12 +171,12 @@ impl <'a> Writer<'a> {
             for y in 0..(self.buf.height - 1) {
                 for x in 0..self.buf.width {
                     self.buf.copy(x, y + 1, x, y);
-                };
-            };
+                }
+            }
 
             for x in 0..self.buf.width {
                 self.buf.set(x, self.buf.height - 1, b' ', self.fg_color, self.bg_color);
-            };
+            }
 
             self.y = self.buf.height - 1;
         };
@@ -212,12 +209,12 @@ impl <'a> Writer<'a> {
     pub fn write_str(&mut self, s: &str) {
         for ch in s.chars() {
             self.write_char_impl(ch);
-        };
+        }
         self.buf.move_cursor(self.x, self.y);
     }
 }
 
-impl <'a> fmt::Write for Writer<'a> {
+impl<'a> fmt::Write for Writer<'a> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.write_str(s);
         Ok(())

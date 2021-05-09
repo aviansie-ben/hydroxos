@@ -3,9 +3,9 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::iter::FromIterator;
 
-use crate::x86_64::dev::vgabuf;
 use crate::io::tty::Tty;
 use crate::sync::{Future, UninterruptibleSpinlock};
+use crate::x86_64::dev::vgabuf;
 
 const MAX_CSI_LENGTH: usize = 64;
 
@@ -43,11 +43,7 @@ impl VirtualTerminalInternals {
         let (w, h) = self.size;
 
         let y = y + self.buf_line;
-        let y = if y >= h {
-            y - h
-        } else {
-            y
-        };
+        let y = if y >= h { y - h } else { y };
 
         y * w + x
     }
@@ -85,15 +81,15 @@ impl VirtualTerminalInternals {
         if start <= end {
             for i in start..end {
                 self.buf[i] = clear_char;
-            };
+            }
         } else {
             for i in start..self.buf_end() {
                 self.buf[i] = clear_char;
-            };
+            }
 
             for i in 0..end {
                 self.buf[i] = clear_char;
-            };
+            }
         };
     }
 
@@ -212,7 +208,7 @@ impl VirtualTerminalInternals {
                 if vt_id == self.id {
                     display.redraw(self);
                 };
-            };
+            }
         });
     }
 }
@@ -225,7 +221,7 @@ impl Tty for VirtualTerminal {
         self.0.with_lock(|vt| {
             for i in 0..bytes.len() {
                 vt.write_byte((*bytes)[i]);
-            };
+            }
 
             vt.redraw();
             Future::done(Ok(()))
@@ -248,11 +244,15 @@ impl VirtualTerminal {
         assert!(width.checked_mul(height).is_some());
 
         VirtualTerminal(UninterruptibleSpinlock::new(VirtualTerminalInternals {
-            buf: Vec::from_iter(itertools::repeat_n(VTChar {
-                ch: ' ',
-                fg_color: vgabuf::Color::White,
-                bg_color: vgabuf::Color::Black
-            }, width * height)).into_boxed_slice(),
+            buf: Vec::from_iter(itertools::repeat_n(
+                VTChar {
+                    ch: ' ',
+                    fg_color: vgabuf::Color::White,
+                    bg_color: vgabuf::Color::Black
+                },
+                width * height
+            ))
+            .into_boxed_slice(),
             buf_line: 0,
             size: (width, height),
             state: VirtualTerminalState::Normal,
@@ -298,8 +298,8 @@ impl VirtualTerminalDisplay {
                         };
 
                         buf.set(x, y, ch, fg_color, bg_color);
-                    };
-                };
+                    }
+                }
 
                 if term.cursor_hidden {
                     buf.hide_cursor();
@@ -331,7 +331,7 @@ pub fn init(primary_display: VirtualTerminalDisplay, num_terminals: usize) {
         virtual_terminals.reserve_exact(num_terminals);
         for i in 0..num_terminals {
             virtual_terminals.push(Arc::new(VirtualTerminal::new(i, width, height)));
-        };
+        }
 
         virtual_terminals[0].0.with_lock(|vt| {
             VIRTUAL_DISPLAYS.with_lock(|virtual_displays| {
@@ -342,9 +342,7 @@ pub fn init(primary_display: VirtualTerminalDisplay, num_terminals: usize) {
 }
 
 pub fn get_terminal(id: usize) -> Option<Arc<VirtualTerminal>> {
-    VIRTUAL_TERMINALS.with_lock(|virtual_terminals| {
-        virtual_terminals.get(id).cloned()
-    })
+    VIRTUAL_TERMINALS.with_lock(|virtual_terminals| virtual_terminals.get(id).cloned())
 }
 
 pub fn switch_display(display_id: usize, terminal_id: usize) -> bool {

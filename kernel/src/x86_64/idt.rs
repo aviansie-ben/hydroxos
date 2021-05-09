@@ -1,12 +1,11 @@
 use core::mem;
 
-use x86_64::{PrivilegeLevel, VirtAddr};
 use x86_64::instructions::tables::lidt;
 use x86_64::structures::DescriptorTablePointer;
-
-use crate::util::SharedUnsafeCell;
+use x86_64::{PrivilegeLevel, VirtAddr};
 
 use super::regs::{GeneralRegister, SavedBasicRegisters};
+use crate::util::SharedUnsafeCell;
 
 macro_rules! handler_with_code {
     ($name:ident, $n:expr) => {
@@ -129,7 +128,13 @@ unsafe extern "C" fn handle_interrupt(frame: &mut InterruptFrame) {
         sched::begin_interrupt();
     };
 
-    writeln!(TtyWriter::new(vt::get_terminal(0).unwrap().as_ref()), "Got interrupt {} - {}", interrupt_num, *CTR.get()).unwrap();
+    writeln!(
+        TtyWriter::new(vt::get_terminal(0).unwrap().as_ref()),
+        "Got interrupt {} - {}",
+        interrupt_num,
+        *CTR.get()
+    )
+    .unwrap();
     *CTR.get() += 1;
 
     if interrupt_num < IRQS_START {
@@ -309,7 +314,7 @@ impl InterruptTableEntry {
         reserved: 0
     };
 
-    fn new(ty: u16, dpl: PrivilegeLevel, ist: u16, f: Option<extern "C" fn ()>) -> InterruptTableEntry {
+    fn new(ty: u16, dpl: PrivilegeLevel, ist: u16, f: Option<extern "C" fn()>) -> InterruptTableEntry {
         let mut entry = InterruptTableEntry::EMPTY;
 
         entry.set_type(ty);
@@ -332,7 +337,7 @@ impl InterruptTableEntry {
         self.options |= ty;
     }
 
-    fn set_handler(&mut self, f: Option<extern "C" fn ()>) {
+    fn set_handler(&mut self, f: Option<extern "C" fn()>) {
         if let Some(f) = f {
             let f = f as u64;
 
@@ -434,9 +439,14 @@ pub unsafe fn init_bsp() {
 
     for (i, f) in handlers.iter().copied().enumerate() {
         idt.entries[i] = InterruptTableEntry::new(InterruptTableEntry::OPTION_TYPE_INTERRUPT_GATE, PrivilegeLevel::Ring0, 0, Some(f));
-    };
+    }
 
-    idt.entries[0x80] = InterruptTableEntry::new(InterruptTableEntry::OPTION_TYPE_TRAP_GATE, PrivilegeLevel::Ring3, 0, Some(begin_int80));
+    idt.entries[0x80] = InterruptTableEntry::new(
+        InterruptTableEntry::OPTION_TYPE_TRAP_GATE,
+        PrivilegeLevel::Ring3,
+        0,
+        Some(begin_int80)
+    );
 
     lidt(&idt.pointer());
 }

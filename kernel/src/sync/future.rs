@@ -1,10 +1,10 @@
 //! Asynchronously resolved values.
 
+use alloc::boxed::Box;
 use core::marker::PhantomData;
 use core::mem;
 use core::pin::Pin;
 use core::ptr;
-use alloc::boxed::Box;
 
 use x86_64::instructions::interrupts;
 
@@ -19,7 +19,10 @@ struct FutureWait<T> {
 
 #[derive(Debug)]
 enum FutureInternal<T> {
-    Waiting(*const UninterruptibleSpinlock<FutureWait<T>>, PhantomData<UninterruptibleSpinlock<FutureWait<T>>>),
+    Waiting(
+        *const UninterruptibleSpinlock<FutureWait<T>>,
+        PhantomData<UninterruptibleSpinlock<FutureWait<T>>>
+    ),
     Done(T)
 }
 
@@ -39,7 +42,7 @@ enum FutureInternal<T> {
 #[derive(Debug)]
 pub struct Future<T>(FutureInternal<T>);
 
-impl <T> Future<T> {
+impl<T> Future<T> {
     /// Creates a new unresolved [`Future`] that can be fulfilled using the provided [`FutureWriter`].
     #[must_use]
     pub fn new() -> (Future<T>, FutureWriter<T>) {
@@ -49,13 +52,10 @@ impl <T> Future<T> {
             wait: ThreadWaitList::new()
         })));
 
-        (
-            Future(FutureInternal::Waiting(wait, PhantomData)),
-            FutureWriter {
-                wait,
-                _data: PhantomData
-            }
-        )
+        (Future(FutureInternal::Waiting(wait, PhantomData)), FutureWriter {
+            wait,
+            _data: PhantomData
+        })
     }
 
     /// Creates a new [`Future`] that is immediately resolved with the provided value. Calling methods on the returned future will never
@@ -64,7 +64,7 @@ impl <T> Future<T> {
         Future(FutureInternal::Done(val))
     }
 
-    fn do_action<U>(&mut self, f: impl FnOnce (Result<&mut T, UninterruptibleSpinlockGuard<FutureWait<T>>>) -> U) -> U {
+    fn do_action<U>(&mut self, f: impl FnOnce(Result<&mut T, UninterruptibleSpinlockGuard<FutureWait<T>>>) -> U) -> U {
         let result = match self.0 {
             FutureInternal::Waiting(ptr, _) => interrupts::without_interrupts(|| unsafe {
                 let mut wait_guard = (*ptr).lock();
@@ -125,7 +125,7 @@ impl <T> Future<T> {
             if done {
                 break;
             };
-        };
+        }
     }
 
     /// Updates this future based on the current state of the request. This operation will never block and so is safe to call from within
@@ -196,7 +196,7 @@ impl <T> Future<T> {
     }
 }
 
-impl <T: Clone> Clone for Future<T> {
+impl<T: Clone> Clone for Future<T> {
     fn clone(&self) -> Future<T> {
         match self.0 {
             FutureInternal::Waiting(ptr, _) => unsafe {
@@ -208,7 +208,7 @@ impl <T: Clone> Clone for Future<T> {
     }
 }
 
-impl <T> Drop for Future<T> {
+impl<T> Drop for Future<T> {
     fn drop(&mut self) {
         match self.0 {
             FutureInternal::Waiting(ptr, _) if !ptr.is_null() => unsafe {
@@ -237,7 +237,7 @@ pub struct FutureWriter<T> {
     _data: PhantomData<UninterruptibleSpinlock<FutureWait<T>>>
 }
 
-impl <T> FutureWriter<T> {
+impl<T> FutureWriter<T> {
     /// Resolves the future associated with this writer with the provided value.
     pub fn finish(self, val: T) {
         unsafe {
@@ -257,8 +257,11 @@ impl <T> FutureWriter<T> {
     }
 }
 
-impl <T> Drop for FutureWriter<T> {
+impl<T> Drop for FutureWriter<T> {
     fn drop(&mut self) {
-        panic!("FutureWriter for {:?} dropped without having a value given (this causes readers to hang forever)", self.wait);
+        panic!(
+            "FutureWriter for {:?} dropped without having a value given (this causes readers to hang forever)",
+            self.wait
+        );
     }
 }

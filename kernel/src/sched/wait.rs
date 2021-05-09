@@ -4,8 +4,8 @@ use core::mem::{ManuallyDrop, MaybeUninit};
 use core::pin::Pin;
 use core::ptr;
 
-use crate::sync::UninterruptibleSpinlock;
 use super::task::{Thread, ThreadLock, ThreadState};
+use crate::sync::UninterruptibleSpinlock;
 
 /// State information for a thread which is waiting on a wait list.
 #[derive(Debug)]
@@ -32,7 +32,12 @@ impl ThreadWaitListInternal {
 
             if let ThreadState::Waiting(ref state) = thread_lock.state() {
                 if state.list != list {
-                    panic!("{} present in wait list {:p}, but is in state {:?}", thread_lock.thread().debug_name(), self, thread_lock.state());
+                    panic!(
+                        "{} present in wait list {:p}, but is in state {:?}",
+                        thread_lock.thread().debug_name(),
+                        self,
+                        thread_lock.state()
+                    );
                 };
 
                 self.head = state.next;
@@ -40,7 +45,12 @@ impl ThreadWaitListInternal {
                     self.tail = ptr::null();
                 };
             } else {
-                panic!("{} present in wait list {:p}, but is in state {:?}", thread_lock.thread().debug_name(), self, thread_lock.state());
+                panic!(
+                    "{} present in wait list {:p}, but is in state {:?}",
+                    thread_lock.thread().debug_name(),
+                    self,
+                    thread_lock.state()
+                );
             };
 
             Some(thread_lock)
@@ -188,7 +198,7 @@ impl ThreadWaitList {
             };
 
             num_woken += 1;
-        };
+        }
 
         num_woken
     }

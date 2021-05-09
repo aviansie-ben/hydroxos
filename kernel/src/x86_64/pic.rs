@@ -61,19 +61,11 @@ pub unsafe fn mask_all_irqs() {
 pub unsafe fn set_irq_masked(irq: u8, masked: bool) {
     assert!(irq < 0x10);
 
-    let mut pic_data_port: Port<u8> = Port::new(if irq > 7 {
-        SLAVE_PIC_DATA_PORT
-    } else {
-        MASTER_PIC_DATA_PORT
-    });
+    let mut pic_data_port: Port<u8> = Port::new(if irq > 7 { SLAVE_PIC_DATA_PORT } else { MASTER_PIC_DATA_PORT });
     let imr = pic_data_port.read();
     let mask_bit = 1 << (irq & 0x7);
 
-    pic_data_port.write(if masked {
-        imr | mask_bit
-    } else {
-        imr & !mask_bit
-    });
+    pic_data_port.write(if masked { imr | mask_bit } else { imr & !mask_bit });
 }
 
 pub fn read_isr() -> u16 {
