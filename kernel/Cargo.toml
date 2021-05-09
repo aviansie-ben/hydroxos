@@ -3,6 +3,7 @@ name = "hydroxos_kernel"
 version = "0.1.0"
 authors = ["Benjamin Thomas <ben@benthomas.ca>"]
 edition = "2018"
+license = "MIT OR Apache-2.0"
 
 [package.metadata.bootimage]
 test-args = ["-device", "isa-debug-exit,iobase=0xf4,iosize=0x4", "-serial", "stdio", "-display", "none", "-cpu", "qemu64,+xsave"]
