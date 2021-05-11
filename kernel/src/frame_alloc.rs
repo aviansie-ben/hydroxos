@@ -1,18 +1,83 @@
+//! Physical frame allocation.
+
+use core::mem::MaybeUninit;
+
+use x86_64::PhysAddr;
+
 use crate::x86_64::page::get_phys_mem_base;
 
 const NUM_FRAMES_PER_PAGE: usize = crate::x86_64::page::PAGE_SIZE / core::mem::size_of::<x86_64::PhysAddr>();
+
+/// An allocator that returns physical page frames.
+pub trait FrameAllocator {
+    /// Free a single page frame and make it available through this allocator.
+    ///
+    /// # Safety
+    ///
+    /// This method assumes that the provided page frame is valid (i.e. it points at memory that's usable as general-purpose RAM) and that
+    /// it is no longer in use by anything else. Providing valid memory is required, even if callers to [`FrameAllocator::alloc_one`] don't
+    /// require this, as the frame allocator is free to use this memory internally as scratch memory.
+    unsafe fn free_one(&mut self, frame: x86_64::PhysAddr);
+
+    /// Allocates a single page frame from this allocator. Returns [`None`] if no page frames are available.
+    ///
+    /// # Safety
+    ///
+    /// Unless the particular allocator in use makes claims otherwise, page frames received from this API may contain sensitive information
+    /// that was left in memory when the page frame was freed. Before making any memory allocated from here visible to user-space code, it
+    /// should be initialized to a known pattern to avoid leaking information to untrusted code.
+    fn alloc_one(&mut self) -> Option<x86_64::PhysAddr>;
+
+    /// Gets the total number of page frames available from this allocator.
+    fn num_frames_available(&self) -> usize;
+
+    /// Frees multiple page frames and makes them available through this allocator.
+    ///
+    /// # Safety
+    ///
+    /// This method assumes that all provided page frames are valid (i.e. they point at memory that's usable as general-purpose RAM), that
+    /// they are no longer in use by anything else, and that the list of page frames to free does not contain duplicate entries.
+    unsafe fn free_many(&mut self, frames: &[x86_64::PhysAddr]) {
+        for &frame in frames.iter() {
+            self.free_one(frame);
+        }
+    }
+
+    /// Allocates multiple page frames from this allocator. Returns [`None`] (and does not allocate any page frames) if insufficient page
+    /// frames are available.
+    ///
+    /// Upon success, `frames_out` will be initialized with the addresses of the page frames that were allocated and a slice viewing
+    /// `frames_out` as initialized will be returned.
+    ///
+    /// # Safety
+    ///
+    /// This method has the same guarantees with regards to memory initialization as [`FrameAllocator::alloc_one`].
+    fn alloc_many<'a>(&mut self, frames_out: &'a mut [MaybeUninit<x86_64::PhysAddr>]) -> Option<&'a mut [x86_64::PhysAddr]> {
+        if self.num_frames_available() < frames_out.len() {
+            return None;
+        }
+
+        for frame_out in frames_out.iter_mut() {
+            unsafe { *frame_out.as_mut_ptr() = self.alloc_one().unwrap() }
+        }
+
+        Some(unsafe { &mut *(frames_out as *mut [MaybeUninit<x86_64::PhysAddr>] as *mut [x86_64::PhysAddr]) })
+    }
+}
 
 #[repr(C)]
 struct StackFrameAllocatorPage {
     frames: [x86_64::PhysAddr; NUM_FRAMES_PER_PAGE]
 }
 
+/// A page frame allocator that maintains an internal stack of free frames.
 pub struct StackFrameAllocator {
     num_frames_available: usize,
     stack_top: *mut StackFrameAllocatorPage
 }
 
 impl StackFrameAllocator {
+    /// Creates a new empty stack page frame allocator.
     pub const fn new() -> StackFrameAllocator {
         StackFrameAllocator {
             num_frames_available: 0,
@@ -31,8 +96,10 @@ impl StackFrameAllocator {
             n
         }
     }
+}
 
-    pub unsafe fn push(&mut self, frame: x86_64::PhysAddr) {
+impl FrameAllocator for StackFrameAllocator {
+    unsafe fn free_one(&mut self, frame: PhysAddr) {
         if self.num_frames_available == 0 {
             self.stack_top = get_phys_mem_base().offset(frame.as_u64() as isize) as *mut StackFrameAllocatorPage;
             (*self.stack_top).frames[0] = x86_64::PhysAddr::zero();
@@ -52,7 +119,7 @@ impl StackFrameAllocator {
         self.num_frames_available += 1;
     }
 
-    pub fn pop(&mut self) -> Option<x86_64::PhysAddr> {
+    fn alloc_one(&mut self) -> Option<PhysAddr> {
         unsafe {
             if self.num_frames_available == 0 {
                 None
@@ -77,7 +144,7 @@ impl StackFrameAllocator {
         }
     }
 
-    pub fn num_frames_available(&self) -> usize {
+    fn num_frames_available(&self) -> usize {
         self.num_frames_available
     }
 }
@@ -86,10 +153,12 @@ unsafe impl Send for StackFrameAllocator {}
 
 #[cfg(test)]
 mod tests {
+    use core::mem::MaybeUninit;
+
     use x86_64::structures::paging::mapper::{OffsetPageTable, Translate, TranslateResult};
     use x86_64::{PhysAddr, VirtAddr};
 
-    use super::{StackFrameAllocator, NUM_FRAMES_PER_PAGE};
+    use super::{FrameAllocator, StackFrameAllocator, NUM_FRAMES_PER_PAGE};
     use crate::util::PageAligned;
     use crate::x86_64::page::{get_phys_mem_base, get_phys_mem_ptr_mut};
 
@@ -111,7 +180,7 @@ mod tests {
         let mut allocator = StackFrameAllocator::new();
 
         assert_eq!(0, allocator.num_frames_available());
-        assert_eq!(None, allocator.pop());
+        assert_eq!(None, allocator.alloc_one());
     }
 
     #[test_case]
@@ -119,13 +188,13 @@ mod tests {
         unsafe {
             let mut allocator = StackFrameAllocator::new();
 
-            allocator.push(get_test_page(0));
+            allocator.free_one(get_test_page(0));
 
             assert_eq!(1, allocator.num_frames_available());
-            assert_eq!(Some(get_test_page(0)), allocator.pop());
+            assert_eq!(Some(get_test_page(0)), allocator.alloc_one());
 
             assert_eq!(0, allocator.num_frames_available());
-            assert_eq!(None, allocator.pop());
+            assert_eq!(None, allocator.alloc_one());
         };
     }
 
@@ -136,8 +205,7 @@ mod tests {
 
             for i in 0..(TEST_AREA.len() - 1) {
                 for _ in (0..NUM_FRAMES_PER_PAGE).step_by(2) {
-                    allocator.push(get_test_page(i));
-                    allocator.push(get_test_page(i + 1));
+                    allocator.free_many(&[get_test_page(i), get_test_page(i + 1)]);
                 }
 
                 assert_eq!((i + 1) * NUM_FRAMES_PER_PAGE, allocator.num_frames_available());
@@ -145,14 +213,18 @@ mod tests {
 
             for i in (0..(TEST_AREA.len() - 1)).rev() {
                 for _ in (0..NUM_FRAMES_PER_PAGE).step_by(2) {
-                    assert_eq!(Some(get_test_page(i + 1)), allocator.pop());
-                    assert_eq!(Some(get_test_page(i)), allocator.pop());
+                    let mut frames = [MaybeUninit::uninit(); 2];
+
+                    assert_eq!(
+                        Some(&mut [get_test_page(i + 1), get_test_page(i)][..]),
+                        allocator.alloc_many(&mut frames)
+                    );
                 }
 
                 assert_eq!(i * NUM_FRAMES_PER_PAGE, allocator.num_frames_available());
             }
 
-            assert_eq!(None, allocator.pop());
+            assert_eq!(None, allocator.alloc_one());
         };
     }
 }
