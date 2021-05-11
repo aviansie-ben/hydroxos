@@ -1,6 +1,8 @@
 //! Asynchronously resolved values.
 
+use alloc::vec;
 use alloc::boxed::Box;
+use alloc::vec::Vec;
 use core::marker::PhantomData;
 use core::mem;
 use core::pin::Pin;
@@ -14,6 +16,7 @@ use crate::sync::uninterruptible::{UninterruptibleSpinlock, UninterruptibleSpinl
 struct FutureWait<T> {
     refs: usize,
     val: Option<T>,
+    actions: Vec<Box<dyn FnOnce(&T) + Send>>,
     wait: ThreadWaitList
 }
 
@@ -40,15 +43,16 @@ enum FutureInternal<T> {
 /// but failing to ever resolve it will leak internal memory used to track futures that are waiting to be resolved and can result in threads
 /// being left in a state where they are stuck waiting and cannot be killed normally.
 #[derive(Debug)]
+#[must_use]
 pub struct Future<T>(FutureInternal<T>);
 
 impl<T> Future<T> {
     /// Creates a new unresolved [`Future`] that can be fulfilled using the provided [`FutureWriter`].
-    #[must_use]
     pub fn new() -> (Future<T>, FutureWriter<T>) {
         let wait = Box::leak(Box::new(UninterruptibleSpinlock::new(FutureWait {
             refs: 1,
             val: None,
+            actions: vec![],
             wait: ThreadWaitList::new()
         })));
 
@@ -194,6 +198,21 @@ impl<T> Future<T> {
         self.update_readiness();
         self.try_unwrap_without_update()
     }
+
+    /// Runs the provided callback when this [`Future`] is resolved. This callback will be run immediately if the future is already
+    /// resolved. Otherwise, it will be run when [`FutureWriter::finish`] is called, from the context of the code that calls this method.
+    /// As a result, the provided callback may be run in a different thread than the current thread or even in the context of an interrupt
+    /// handler.
+    pub fn when_resolved(&mut self, f: impl FnOnce(&T) + Send + 'static) {
+        self.do_action(|state| match state {
+            Ok(val) => {
+                f(val);
+            },
+            Err(mut wait) => {
+                wait.actions.push(Box::new(f));
+            }
+        })
+    }
 }
 
 impl<T: Clone> Clone for Future<T> {
@@ -243,9 +262,22 @@ impl<T> FutureWriter<T> {
         unsafe {
             let mut wait = (*self.wait).lock();
 
+            wait.val = Some(val);
+
+            let actions = mem::replace(&mut wait.actions, vec![]);
+            if !actions.is_empty() {
+                let val_ref = &*(wait.val.as_ref().unwrap() as *const T);
+                mem::drop(wait);
+
+                for a in actions.into_iter() {
+                    a(val_ref);
+                }
+
+                wait = (*self.wait).lock();
+            }
+
             wait.refs -= 1;
             if wait.refs != 0 {
-                wait.val = Some(val);
                 wait.wait.wake_all();
             } else {
                 mem::drop(wait);
