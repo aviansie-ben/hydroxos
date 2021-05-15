@@ -1,31 +1,42 @@
 //! Asynchronously resolved values.
 
-use alloc::vec;
 use alloc::boxed::Box;
+use alloc::vec;
 use alloc::vec::Vec;
+use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::mem;
+use core::mem::MaybeUninit;
 use core::pin::Pin;
 use core::ptr;
-
-use x86_64::instructions::interrupts;
 
 use crate::sched::wait::ThreadWaitList;
 use crate::sync::uninterruptible::{UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
 
-struct FutureWait<T> {
-    refs: usize,
-    val: Option<T>,
-    actions: Vec<Box<dyn FnOnce(&T) + Send>>,
+struct FutureWaitAny {
+    wait_refs: usize,
+    val_refs: usize,
+    resolved: bool,
+    actions: Vec<Box<dyn FnOnce(*const (), &mut UninterruptibleSpinlockGuard<FutureWaitAny>) + Send>>,
     wait: ThreadWaitList
+}
+
+struct FutureWait<T> {
+    any: UninterruptibleSpinlock<FutureWaitAny>,
+    val: UnsafeCell<MaybeUninit<T>>
+}
+
+#[derive(Debug, Clone)]
+struct FutureWaitFreer {
+    ptr: *const (),
+    free_fn: fn(*const ()),
+    _data: PhantomData<dyn Drop>
 }
 
 #[derive(Debug)]
 enum FutureInternal<T> {
-    Waiting(
-        *const UninterruptibleSpinlock<FutureWait<T>>,
-        PhantomData<UninterruptibleSpinlock<FutureWait<T>>>
-    ),
+    Waiting(*const FutureWait<T>, PhantomData<FutureWait<T>>),
+    WaitingNoVal(*const UninterruptibleSpinlock<FutureWaitAny>, FutureWaitFreer),
     Done(T)
 }
 
@@ -49,12 +60,16 @@ pub struct Future<T>(FutureInternal<T>);
 impl<T> Future<T> {
     /// Creates a new unresolved [`Future`] that can be fulfilled using the provided [`FutureWriter`].
     pub fn new() -> (Future<T>, FutureWriter<T>) {
-        let wait = Box::leak(Box::new(UninterruptibleSpinlock::new(FutureWait {
-            refs: 1,
-            val: None,
-            actions: vec![],
-            wait: ThreadWaitList::new()
-        })));
+        let wait = Box::leak(Box::new(FutureWait {
+            any: UninterruptibleSpinlock::new(FutureWaitAny {
+                wait_refs: 2,
+                val_refs: 1,
+                resolved: false,
+                actions: vec![],
+                wait: ThreadWaitList::new()
+            }),
+            val: UnsafeCell::new(MaybeUninit::uninit())
+        }));
 
         (Future(FutureInternal::Waiting(wait, PhantomData)), FutureWriter {
             wait,
@@ -64,42 +79,60 @@ impl<T> Future<T> {
 
     /// Creates a new [`Future`] that is immediately resolved with the provided value. Calling methods on the returned future will never
     /// block or otherwise fail to return the provided value, even without needing to update the future's readiness.
-    pub fn done(val: T) -> Future<T> {
+    pub const fn done(val: T) -> Future<T> {
         Future(FutureInternal::Done(val))
     }
 
-    fn do_action<U>(&mut self, f: impl FnOnce(Result<&mut T, UninterruptibleSpinlockGuard<FutureWait<T>>>) -> U) -> U {
+    fn do_action<U>(&mut self, f: impl FnOnce(Result<&mut T, UninterruptibleSpinlockGuard<FutureWaitAny>>) -> U) -> U {
         let result = match self.0 {
-            FutureInternal::Waiting(ptr, _) => interrupts::without_interrupts(|| unsafe {
-                let mut wait_guard = (*ptr).lock();
-                let wait = &mut *wait_guard;
+            FutureInternal::Waiting(ptr, _) => unsafe {
+                let mut wait = (*ptr).any.lock();
 
-                if let Some(ref mut val) = wait.val {
-                    wait.refs -= 1;
+                if wait.resolved {
+                    wait.wait_refs -= 1;
+                    wait.val_refs -= 1;
 
-                    let val = if wait.refs == 0 {
-                        let val = wait.val.take().unwrap();
-
-                        mem::drop(wait_guard);
-                        Box::from_raw(ptr as *mut UninterruptibleSpinlock<FutureWait<T>>);
-
-                        val
+                    let val = if wait.val_refs == 0 {
+                        ptr::read((*(*ptr).val.get()).as_ptr())
                     } else {
-                        crate::util::clone_or_panic(val)
+                        crate::util::clone_or_panic(&*(*(*ptr).val.get()).as_ptr())
                     };
+
+                    if wait.wait_refs == 0 {
+                        mem::drop(wait);
+                        Box::from_raw(ptr as *mut FutureWait<T>);
+                    }
 
                     self.0 = FutureInternal::Done(val);
                     Ok(f)
                 } else {
-                    Err(f(Err(wait_guard)))
+                    Err(f(Err(wait)))
                 }
-            }),
+            },
+            FutureInternal::WaitingNoVal(ptr, ref freer) => unsafe {
+                let mut wait = (*ptr).lock();
+
+                if wait.resolved {
+                    wait.wait_refs -= 1;
+
+                    if wait.wait_refs == 0 {
+                        mem::drop(wait);
+                        (freer.free_fn)(freer.ptr);
+                    }
+
+                    self.0 = FutureInternal::Done(crate::util::unit_or_panic());
+                    Ok(f)
+                } else {
+                    Err(f(Err(wait)))
+                }
+            },
             FutureInternal::Done(_) => Ok(f)
         };
 
         match result {
             Ok(f) => match self.0 {
                 FutureInternal::Waiting(_, _) => unreachable!(),
+                FutureInternal::WaitingNoVal(_, _) => unreachable!(),
                 FutureInternal::Done(ref mut val) => f(Ok(val))
             },
             Err(wait_result) => wait_result
@@ -146,6 +179,7 @@ impl<T> Future<T> {
     pub fn is_ready(&self) -> bool {
         match self.0 {
             FutureInternal::Waiting(_, _) => false,
+            FutureInternal::WaitingNoVal(_, _) => false,
             FutureInternal::Done(_) => true
         }
     }
@@ -163,6 +197,7 @@ impl<T> Future<T> {
 
         match mem::replace(&mut self.0, FutureInternal::Waiting(ptr::null(), PhantomData)) {
             FutureInternal::Waiting(_, _) => unreachable!(),
+            FutureInternal::WaitingNoVal(_, _) => unreachable!(),
             FutureInternal::Done(val) => {
                 mem::forget(self);
                 val
@@ -181,8 +216,10 @@ impl<T> Future<T> {
     pub fn try_unwrap_without_update(mut self) -> Result<T, Future<T>> {
         match self.0 {
             FutureInternal::Waiting(_, _) => Err(self),
+            FutureInternal::WaitingNoVal(_, _) => Err(self),
             FutureInternal::Done(_) => match mem::replace(&mut self.0, FutureInternal::Waiting(ptr::null(), PhantomData)) {
                 FutureInternal::Waiting(_, _) => unreachable!(),
+                FutureInternal::WaitingNoVal(_, _) => unreachable!(),
                 FutureInternal::Done(val) => {
                     mem::forget(self);
                     Ok(val)
@@ -209,9 +246,34 @@ impl<T> Future<T> {
                 f(val);
             },
             Err(mut wait) => {
-                wait.actions.push(Box::new(f));
+                wait.actions.push(Box::new(|ptr, _| unsafe { f(&*(ptr as *const T)) }));
             }
         })
+    }
+
+    /// Creates a future that resolves to `()` when this future is resolved. This allows for multiple futures to be created that will
+    /// resolve along with another future, even if the value in that future does not implement [`Clone`].
+    pub fn without_val(&self) -> Future<()> {
+        match self.0 {
+            FutureInternal::Waiting(ptr, _) => unsafe {
+                let mut lock = (*ptr).any.lock();
+
+                if lock.resolved {
+                    Future::done(())
+                } else {
+                    lock.wait_refs += 1;
+                    Future(FutureInternal::WaitingNoVal(&(*ptr).any as *const _, FutureWaitFreer {
+                        ptr: ptr as *const (),
+                        free_fn: |ptr| {
+                            Box::from_raw(ptr as *mut FutureWait<T>);
+                        },
+                        _data: PhantomData
+                    }))
+                }
+            },
+            FutureInternal::WaitingNoVal(ptr, ref freer) => Future(FutureInternal::WaitingNoVal(ptr, freer.clone())),
+            FutureInternal::Done(_) => Future::done(())
+        }
     }
 }
 
@@ -219,8 +281,19 @@ impl<T: Clone> Clone for Future<T> {
     fn clone(&self) -> Future<T> {
         match self.0 {
             FutureInternal::Waiting(ptr, _) => unsafe {
-                (*ptr).lock().refs += 1;
+                let mut lock = (*ptr).any.lock();
+
+                lock.wait_refs += 1;
+                lock.val_refs += 1;
+
                 Future(FutureInternal::Waiting(ptr, PhantomData))
+            },
+            FutureInternal::WaitingNoVal(ptr, ref freer) => unsafe {
+                let mut lock = (*ptr).lock();
+
+                lock.wait_refs += 1;
+
+                Future(FutureInternal::WaitingNoVal(ptr, freer.clone()))
             },
             FutureInternal::Done(ref val) => Future(FutureInternal::Done(val.clone()))
         }
@@ -231,12 +304,17 @@ impl<T> Drop for Future<T> {
     fn drop(&mut self) {
         match self.0 {
             FutureInternal::Waiting(ptr, _) if !ptr.is_null() => unsafe {
-                let mut wait = (*ptr).lock();
+                let mut wait = (*ptr).any.lock();
 
-                wait.refs -= 1;
-                if wait.refs == 0 {
+                wait.val_refs -= 1;
+                if wait.val_refs == 0 && wait.resolved {
+                    ptr::read((*(*ptr).val.get()).as_ptr());
+                };
+
+                wait.wait_refs -= 1;
+                if wait.wait_refs == 0 {
                     mem::drop(wait);
-                    Box::from_raw(ptr as *mut UninterruptibleSpinlock<FutureWait<T>>);
+                    Box::from_raw(ptr as *mut FutureWait<T>);
                 };
             },
             _ => {}
@@ -249,39 +327,41 @@ impl<T> Drop for Future<T> {
 ///
 /// Dropping or leaking a value of this type is generally not advisable, as doing so will cause all threads waiting on this future to hang
 /// forever and will leak memory used internally to track the state of unresolved futures. For that reason, attempting to drop a value of
-/// this type except by calling [`FutureWriter::finish`].
+/// this type except by calling [`FutureWriter::finish`] will panic.
 #[derive(Debug)]
+#[must_use]
 pub struct FutureWriter<T> {
-    wait: *const UninterruptibleSpinlock<FutureWait<T>>,
-    _data: PhantomData<UninterruptibleSpinlock<FutureWait<T>>>
+    wait: *const FutureWait<T>,
+    _data: PhantomData<FutureWait<T>>
 }
 
 impl<T> FutureWriter<T> {
     /// Resolves the future associated with this writer with the provided value.
     pub fn finish(self, val: T) {
         unsafe {
-            let mut wait = (*self.wait).lock();
+            let mut wait = (*self.wait).any.lock();
+            let val_ptr = (*self.wait).val.get();
 
-            wait.val = Some(val);
+            wait.resolved = true;
+            *val_ptr = MaybeUninit::new(val);
 
             let actions = mem::replace(&mut wait.actions, vec![]);
             if !actions.is_empty() {
-                let val_ref = &*(wait.val.as_ref().unwrap() as *const T);
-                mem::drop(wait);
-
                 for a in actions.into_iter() {
-                    a(val_ref);
+                    a(val_ptr as *const (), &mut wait);
                 }
-
-                wait = (*self.wait).lock();
             }
 
-            wait.refs -= 1;
-            if wait.refs != 0 {
+            if wait.val_refs == 0 {
+                ptr::read((*val_ptr).as_ptr());
+            }
+
+            wait.wait_refs -= 1;
+            if wait.wait_refs != 0 {
                 wait.wait.wake_all();
             } else {
                 mem::drop(wait);
-                Box::from_raw(self.wait as *mut UninterruptibleSpinlock<FutureWait<T>>);
+                Box::from_raw(self.wait as *mut FutureWait<T>);
             };
 
             mem::forget(self);
@@ -295,5 +375,153 @@ impl<T> Drop for FutureWriter<T> {
             "FutureWriter for {:?} dropped without having a value given (this causes readers to hang forever)",
             self.wait
         );
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use core::sync::atomic::{AtomicBool, Ordering};
+
+    use super::*;
+
+    static ACTION_RUN_FLAG: AtomicBool = AtomicBool::new(false);
+
+    #[test_case]
+    fn test_done() {
+        assert!(Future::done(0xdead).is_ready());
+        assert_eq!(0xdead, Future::done(0xdead).unwrap_blocking());
+        assert_eq!(Some(0xdead), Future::done(0xdead).try_unwrap_without_update().ok());
+        assert_eq!(Some(0xdead), Future::done(0xdead).try_unwrap().ok());
+
+        ACTION_RUN_FLAG.store(false, Ordering::Relaxed);
+        Future::done(0xdead).when_resolved(|_| {
+            ACTION_RUN_FLAG.store(true, Ordering::Relaxed);
+        });
+        assert!(ACTION_RUN_FLAG.load(Ordering::Relaxed));
+    }
+
+    #[test_case]
+    fn test_is_ready() {
+        let (mut future, writer) = Future::new();
+
+        assert!(!future.is_ready());
+
+        writer.finish(0xdead);
+        assert!(!future.is_ready());
+
+        future.update_readiness();
+        assert!(future.is_ready());
+    }
+
+    #[test_case]
+    fn test_try_unwrap() {
+        let (future, writer) = Future::new();
+        let future = match future.try_unwrap() {
+            Err(future) => future,
+            Ok(val) => {
+                panic!("Future was resolved with {:?} early", val);
+            }
+        };
+
+        writer.finish(0xdead);
+        assert_eq!(Some(0xdead), future.try_unwrap().ok());
+    }
+
+    #[test_case]
+    fn test_try_unwrap_without_update() {
+        let (future, writer) = Future::new();
+        let future = match future.try_unwrap_without_update() {
+            Err(future) => future,
+            Ok(val) => {
+                panic!("Future was resolved with {:?} early", val);
+            }
+        };
+
+        writer.finish(0xdead);
+        let mut future = match future.try_unwrap_without_update() {
+            Err(future) => future,
+            Ok(val) => {
+                panic!("Future was resolved with {:?} early", val);
+            }
+        };
+
+        future.update_readiness();
+        assert_eq!(Some(0xdead), future.try_unwrap_without_update().ok());
+    }
+
+    #[test_case]
+    fn test_when_resolved() {
+        let (mut future, writer) = Future::new();
+
+        ACTION_RUN_FLAG.store(false, Ordering::Relaxed);
+        future.when_resolved(|_| {
+            ACTION_RUN_FLAG.store(true, Ordering::Relaxed);
+        });
+
+        assert!(!ACTION_RUN_FLAG.load(Ordering::Relaxed));
+        writer.finish(0xdead);
+        assert!(ACTION_RUN_FLAG.load(Ordering::Relaxed));
+    }
+
+    #[test_case]
+    fn test_without_val() {
+        let (mut future, writer) = {
+            let (future, writer) = Future::new();
+            (future.without_val(), writer)
+        };
+
+        assert!(!future.is_ready());
+
+        writer.finish(0xdead);
+        future.update_readiness();
+        assert!(future.is_ready());
+        assert!(future.try_unwrap_without_update().is_ok());
+    }
+
+    #[test_case]
+    fn test_without_val_after_resolve() {
+        let (future, future_with_val) = {
+            let (future, writer) = Future::new();
+            writer.finish(0xdead);
+
+            (future.without_val(), future)
+        };
+
+        assert!(!future_with_val.is_ready());
+        assert!(future.is_ready());
+        assert!(future.try_unwrap_without_update().is_ok());
+    }
+
+    #[test_case]
+    fn test_without_val_when_resolved() {
+        let (mut future, future_with_val, writer) = {
+            let (future, writer) = Future::new();
+
+            (future.without_val(), future, writer)
+        };
+
+        ACTION_RUN_FLAG.store(false, Ordering::Relaxed);
+        future.when_resolved(|_| {
+            ACTION_RUN_FLAG.store(true, Ordering::Relaxed);
+        });
+
+        assert!(!ACTION_RUN_FLAG.load(Ordering::Relaxed));
+        writer.finish(0xdead);
+        assert!(ACTION_RUN_FLAG.load(Ordering::Relaxed));
+    }
+
+    #[test_case]
+    fn test_clone() {
+        let (future1, writer) = Future::new();
+        let mut future2 = future1.clone();
+
+        writer.finish(0xdead);
+
+        future2.update_readiness();
+        assert!(!future1.is_ready());
+        assert!(future2.is_ready());
+
+        assert_eq!(Some(0xdead), future1.try_unwrap().ok());
+        assert_eq!(Some(0xdead), future2.try_unwrap().ok());
     }
 }

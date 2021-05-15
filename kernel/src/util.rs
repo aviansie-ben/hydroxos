@@ -66,6 +66,26 @@ pub fn clone_or_panic<T>(val: &T) -> T {
     val.clone_or_panic()
 }
 
+trait UnitOrPanic {
+    fn unit_or_panic() -> Self;
+}
+
+impl<T> UnitOrPanic for T {
+    default fn unit_or_panic() -> T {
+        panic!("Attempt to create unit value of non-unit type {}", core::any::type_name::<T>());
+    }
+}
+
+impl UnitOrPanic for () {
+    fn unit_or_panic() -> () {
+        ()
+    }
+}
+
+pub fn unit_or_panic<T>() -> T {
+    UnitOrPanic::unit_or_panic()
+}
+
 #[derive(Debug, Clone)]
 pub struct PinWeak<T: ?Sized>(Weak<T>);
 
