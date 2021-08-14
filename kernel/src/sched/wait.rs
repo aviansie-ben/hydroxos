@@ -218,3 +218,99 @@ impl Drop for ThreadWaitList {
         };
     }
 }
+
+#[cfg(test)]
+mod test {
+    use alloc::boxed::Box;
+    use core::pin::Pin;
+    use core::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+
+    use super::super::task::{Process, Thread};
+    use super::*;
+
+    #[test_case]
+    fn test_wake_one() {
+        let flag = AtomicBool::new(false);
+        let waitlist = Box::pin(ThreadWaitList::new());
+
+        let thread_fn = || {
+            waitlist.as_ref().wait().suspend();
+            flag.store(true, Ordering::Relaxed);
+        };
+
+        let thread = unsafe { Process::kernel().lock().create_kernel_thread_unchecked(thread_fn, 4096) };
+        thread.lock().wake();
+
+        Thread::yield_current();
+        Thread::yield_current();
+        assert_eq!(false, flag.load(Ordering::Relaxed));
+        waitlist.wake_one();
+        Thread::yield_current();
+        assert_eq!(true, flag.load(Ordering::Relaxed));
+        assert!(matches!(*thread.lock().state(), ThreadState::Dead));
+    }
+
+    #[test_case]
+    fn test_wake_one_order() {
+        let val = AtomicI32::new(0);
+        let waitlist = Box::pin(ThreadWaitList::new());
+
+        let thread_fn_1 = || {
+            waitlist.as_ref().wait().suspend();
+            val.store(1, Ordering::Relaxed);
+        };
+        let thread_1 = unsafe { Process::kernel().lock().create_kernel_thread_unchecked(thread_fn_1, 4096) };
+        thread_1.lock().wake();
+        Thread::yield_current();
+
+        let thread_fn_2 = || {
+            waitlist.as_ref().wait().suspend();
+            val.store(2, Ordering::Relaxed);
+        };
+        let thread_2 = unsafe { Process::kernel().lock().create_kernel_thread_unchecked(thread_fn_2, 4096) };
+        thread_2.lock().wake();
+        Thread::yield_current();
+
+        assert_eq!(0, val.load(Ordering::Relaxed));
+
+        waitlist.wake_one();
+        Thread::yield_current();
+        assert_eq!(1, val.load(Ordering::Relaxed));
+        assert!(matches!(*thread_1.lock().state(), ThreadState::Dead));
+
+        waitlist.wake_one();
+        Thread::yield_current();
+        assert_eq!(2, val.load(Ordering::Relaxed));
+        assert!(matches!(*thread_2.lock().state(), ThreadState::Dead));
+    }
+
+    #[test_case]
+    fn test_wake_all() {
+        let val = AtomicI32::new(0);
+        let waitlist = Box::pin(ThreadWaitList::new());
+
+        let thread_fn_1 = || {
+            waitlist.as_ref().wait().suspend();
+            val.fetch_add(1, Ordering::Relaxed);
+        };
+        let thread_1 = unsafe { Process::kernel().lock().create_kernel_thread_unchecked(thread_fn_1, 4096) };
+        thread_1.lock().wake();
+        Thread::yield_current();
+
+        let thread_fn_2 = || {
+            waitlist.as_ref().wait().suspend();
+            val.fetch_add(1, Ordering::Relaxed);
+        };
+        let thread_2 = unsafe { Process::kernel().lock().create_kernel_thread_unchecked(thread_fn_2, 4096) };
+        thread_2.lock().wake();
+        Thread::yield_current();
+
+        assert_eq!(0, val.load(Ordering::Relaxed));
+
+        waitlist.wake_all();
+        Thread::yield_current();
+        assert_eq!(2, val.load(Ordering::Relaxed));
+        assert!(matches!(*thread_1.lock().state(), ThreadState::Dead));
+        assert!(matches!(*thread_2.lock().state(), ThreadState::Dead));
+    }
+}
