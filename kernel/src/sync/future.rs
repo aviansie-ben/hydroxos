@@ -3,6 +3,7 @@
 use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::any::Any;
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::mem;
@@ -12,17 +13,18 @@ use core::ptr;
 
 use crate::sched::wait::ThreadWaitList;
 use crate::sync::uninterruptible::{UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
+use crate::util::SendPtr;
 
-struct FutureWaitAny {
+struct FutureWaitGeneric {
     wait_refs: usize,
     val_refs: usize,
     resolved: bool,
-    actions: Vec<Box<dyn FnOnce(*const (), &mut UninterruptibleSpinlockGuard<FutureWaitAny>) + Send>>,
+    actions: Vec<Box<dyn FnOnce(*const (), &mut UninterruptibleSpinlockGuard<FutureWaitGeneric>) + Send>>,
     wait: ThreadWaitList
 }
 
 struct FutureWait<T> {
-    any: UninterruptibleSpinlock<FutureWaitAny>,
+    generic: UninterruptibleSpinlock<FutureWaitGeneric>,
     val: UnsafeCell<MaybeUninit<T>>
 }
 
@@ -30,13 +32,13 @@ struct FutureWait<T> {
 struct FutureWaitFreer {
     ptr: *const (),
     free_fn: fn(*const ()),
-    _data: PhantomData<dyn Drop>
+    _data: PhantomData<dyn Any>
 }
 
 #[derive(Debug)]
 enum FutureInternal<T> {
     Waiting(*const FutureWait<T>, PhantomData<FutureWait<T>>),
-    WaitingNoVal(*const UninterruptibleSpinlock<FutureWaitAny>, FutureWaitFreer),
+    WaitingNoVal(*const UninterruptibleSpinlock<FutureWaitGeneric>, FutureWaitFreer),
     Done(T)
 }
 
@@ -61,7 +63,7 @@ impl<T> Future<T> {
     /// Creates a new unresolved [`Future`] that can be fulfilled using the provided [`FutureWriter`].
     pub fn new() -> (Future<T>, FutureWriter<T>) {
         let wait = Box::leak(Box::new(FutureWait {
-            any: UninterruptibleSpinlock::new(FutureWaitAny {
+            generic: UninterruptibleSpinlock::new(FutureWaitGeneric {
                 wait_refs: 2,
                 val_refs: 1,
                 resolved: false,
@@ -83,10 +85,10 @@ impl<T> Future<T> {
         Future(FutureInternal::Done(val))
     }
 
-    fn do_action<U>(&mut self, f: impl FnOnce(Result<&mut T, UninterruptibleSpinlockGuard<FutureWaitAny>>) -> U) -> U {
+    fn do_action<U>(&mut self, f: impl FnOnce(Result<&mut T, UninterruptibleSpinlockGuard<FutureWaitGeneric>>) -> U) -> U {
         let result = match self.0 {
             FutureInternal::Waiting(ptr, _) => unsafe {
-                let mut wait = (*ptr).any.lock();
+                let mut wait = (*ptr).generic.lock();
 
                 if wait.resolved {
                     wait.wait_refs -= 1;
@@ -256,13 +258,13 @@ impl<T> Future<T> {
     pub fn without_val(&self) -> Future<()> {
         match self.0 {
             FutureInternal::Waiting(ptr, _) => unsafe {
-                let mut lock = (*ptr).any.lock();
+                let mut lock = (*ptr).generic.lock();
 
                 if lock.resolved {
                     Future::done(())
                 } else {
                     lock.wait_refs += 1;
-                    Future(FutureInternal::WaitingNoVal(&(*ptr).any as *const _, FutureWaitFreer {
+                    Future(FutureInternal::WaitingNoVal(&(*ptr).generic as *const _, FutureWaitFreer {
                         ptr: ptr as *const (),
                         free_fn: |ptr| {
                             Box::from_raw(ptr as *mut FutureWait<T>);
@@ -275,13 +277,107 @@ impl<T> Future<T> {
             FutureInternal::Done(_) => Future::done(())
         }
     }
+
+    unsafe fn dec_wait_ref(ptr: *const FutureWait<T>, mut wait: UninterruptibleSpinlockGuard<FutureWaitGeneric>) {
+        wait.wait_refs -= 1;
+        if wait.wait_refs != 0 {
+            wait.wait.wake_all();
+        } else {
+            mem::drop(wait);
+            Box::from_raw(ptr as *mut FutureWait<T>);
+        }
+    }
+}
+
+impl Future<()> {
+    /// Creates a future that resolves once all of the futures in the provided iterator have resolved.
+    pub fn all(fs: impl IntoIterator<Item=Future<()>>) -> Future<()> {
+        let (future, writer) = Future::new();
+        let wait = SendPtr(writer.into_raw());
+
+        unsafe {
+            (*(*wait.0).val.get()) = MaybeUninit::new(usize::MAX);
+        }
+
+        let mut num_futures = 0;
+        for mut f in fs {
+            num_futures += 1;
+            unsafe {
+                (*wait.0).generic.lock().wait_refs += 1;
+            }
+
+            f.when_resolved(move |_| unsafe {
+                let wait_generic = (*wait.0).generic.lock();
+
+                if *(*(*wait.0).val.get()).as_ptr() == 1 {
+                    FutureWriter::finish_internal(wait.0, wait_generic);
+                } else {
+                    *(*(*wait.0).val.get()).as_mut_ptr() -= 1;
+                };
+            });
+        }
+
+        unsafe {
+            let mut wait_generic = (*wait.0).generic.lock();
+
+            *(*(*wait.0).val.get()).as_mut_ptr() -= usize::MAX - num_futures;
+
+            if *(*(*wait.0).val.get()).as_ptr() == 0 {
+                FutureWriter::finish_internal(wait.0, wait_generic);
+            } else {
+                wait_generic.wait_refs -= 1;
+            }
+        }
+
+        future.without_val()
+    }
+
+    /// Creates a future that resolves once one of the futures in the provided iterator has resolved. The value of the returned future once
+    /// resolved is the index of the first future within the provided iterator that resolved.
+    ///
+    /// This function will return `Err(())` if provided with an empty iterator. Creating a future in this case would result in a future
+    /// which could never resolve, which is generally not desired behaviour and could lead to threads hanging in an uninterruptible state.
+    pub fn any(fs: impl IntoIterator<Item=Future<()>>) -> Result<Future<usize>, ()> {
+        let (future, writer) = Future::new();
+        let wait = SendPtr(writer.into_raw());
+
+        let mut was_empty = true;
+        for (i, mut f) in fs.into_iter().enumerate() {
+            was_empty = false;
+
+            unsafe {
+                (*wait.0).generic.lock().wait_refs += 1;
+            }
+
+            f.when_resolved(move |_| unsafe {
+                let wait_generic = (*wait.0).generic.lock();
+
+                if !wait_generic.resolved {
+                    *(*wait.0).val.get() = MaybeUninit::new(i);
+                    FutureWriter::finish_internal(wait.0, wait_generic);
+                } else {
+                    Future::dec_wait_ref(wait.0, wait_generic);
+                }
+            })
+        }
+
+        unsafe {
+            (*wait.0).generic.lock().wait_refs -= 1;
+        }
+
+        if !was_empty {
+            Ok(future)
+        } else {
+            Err(())
+        }
+    }
 }
 
 impl<T: Clone> Clone for Future<T> {
     fn clone(&self) -> Future<T> {
         match self.0 {
             FutureInternal::Waiting(ptr, _) => unsafe {
-                let mut lock = (*ptr).any.lock();
+                let mut lock = (*ptr).generic.lock();
 
                 lock.wait_refs += 1;
                 lock.val_refs += 1;
@@ -304,18 +400,14 @@ impl<T> Drop for Future<T> {
     fn drop(&mut self) {
         match self.0 {
             FutureInternal::Waiting(ptr, _) if !ptr.is_null() => unsafe {
-                let mut wait = (*ptr).any.lock();
+                let mut wait = (*ptr).generic.lock();
 
                 wait.val_refs -= 1;
                 if wait.val_refs == 0 && wait.resolved {
                     ptr::read((*(*ptr).val.get()).as_ptr());
                 };
 
-                wait.wait_refs -= 1;
-                if wait.wait_refs == 0 {
-                    mem::drop(wait);
-                    Box::from_raw(ptr as *mut FutureWait<T>);
-                };
+                Future::dec_wait_ref(ptr, wait);
             },
             _ => {}
         };
@@ -336,36 +428,46 @@ pub struct FutureWriter<T> {
 }
 
 impl<T> FutureWriter<T> {
+    unsafe fn finish_internal(ptr: *const FutureWait<T>, mut wait: UninterruptibleSpinlockGuard<FutureWaitGeneric>) {
+        let val_ptr = (*ptr).val.get();
+        wait.resolved = true;
+
+        let actions = mem::replace(&mut wait.actions, vec![]);
+        if !actions.is_empty() {
+            for a in actions.into_iter() {
+                a(val_ptr as *const (), &mut wait);
+            }
+        }
+
+        if wait.val_refs == 0 {
+            ptr::read((*val_ptr).as_ptr());
+        }
+
+        Future::dec_wait_ref(ptr, wait);
+    }
+
     /// Resolves the future associated with this writer with the provided value.
     pub fn finish(self, val: T) {
         unsafe {
-            let mut wait = (*self.wait).any.lock();
-            let val_ptr = (*self.wait).val.get();
+            let wait = (*self.wait).generic.lock();
 
-            wait.resolved = true;
-            *val_ptr = MaybeUninit::new(val);
-
-            let actions = mem::replace(&mut wait.actions, vec![]);
-            if !actions.is_empty() {
-                for a in actions.into_iter() {
-                    a(val_ptr as *const (), &mut wait);
-                }
-            }
-
-            if wait.val_refs == 0 {
-                ptr::read((*val_ptr).as_ptr());
-            }
-
-            wait.wait_refs -= 1;
-            if wait.wait_refs != 0 {
-                wait.wait.wake_all();
-            } else {
-                mem::drop(wait);
-                Box::from_raw(self.wait as *mut FutureWait<T>);
-            };
-
+            *(*self.wait).val.get() = MaybeUninit::new(val);
+            FutureWriter::finish_internal(self.wait, wait);
             mem::forget(self);
         };
+    }
+
+    fn into_raw(self) -> *const FutureWait<T> {
+        let wait = self.wait;
+        mem::forget(self);
+        wait
+    }
+
+    fn from_raw(ptr: *const FutureWait<T>) -> FutureWriter<T> {
+        FutureWriter {
+            wait: ptr,
+            _data: PhantomData
+        }
     }
 }
 
@@ -523,5 +625,72 @@ mod test {
 
         assert_eq!(Some(0xdead), future1.try_unwrap().ok());
         assert_eq!(Some(0xdead), future2.try_unwrap().ok());
+    }
+
+    #[test_case]
+    fn test_all() {
+        let (future1, writer1) = Future::new();
+        let (future2, writer2) = Future::new();
+
+        let mut all = Future::all([future1, future2]);
+
+        all.update_readiness();
+        assert!(!all.is_ready());
+
+        writer1.finish(());
+        all.update_readiness();
+        assert!(!all.is_ready());
+
+        writer2.finish(());
+        all.update_readiness();
+        assert!(all.is_ready());
+    }
+
+    #[test_case]
+    fn test_all_already_resolved() {
+        let (future1, writer1) = Future::new();
+        let (future2, writer2) = Future::new();
+
+        writer1.finish(());
+        writer2.finish(());
+
+        assert!(Future::all([future1, future2]).is_ready());
+    }
+
+    #[test_case]
+    fn test_all_empty() {
+        assert!(Future::all([]).is_ready());
+    }
+
+    #[test_case]
+    fn test_any() {
+        let (future1, writer1) = Future::new();
+        let (future2, writer2) = Future::new();
+
+        let mut any = Future::any([future1, future2]).unwrap();
+
+        any.update_readiness();
+        assert!(!any.is_ready());
+
+        writer2.finish(());
+        assert_eq!(Some(1), any.try_unwrap().ok());
+
+        writer1.finish(());
+    }
+
+    #[test_case]
+    fn test_any_already_resolved() {
+        let (future1, writer1) = Future::new();
+        let (future2, writer2) = Future::new();
+
+        writer1.finish(());
+        writer2.finish(());
+
+        assert_eq!(Some(0), Future::any([future1, future2]).unwrap().try_unwrap().ok());
+    }
+
+    #[test_case]
+    fn test_any_empty() {
+        assert!(Future::any([]).is_err());
     }
 }
