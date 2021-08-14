@@ -147,7 +147,23 @@ impl<'a> ProcessLock<'a> {
     ///
     /// This method can only be used on the kernel process. For safety reasons, creating kernel-mode threads in user-space processes is not
     /// allowed and attempting to do so will cause a panic.
-    pub fn create_kernel_thread<F: FnOnce() -> ()>(&mut self, f: F, stack_size: usize) -> Pin<Arc<Thread>> {
+    pub fn create_kernel_thread<F: FnOnce() -> () + Send + 'static>(&mut self, f: F, stack_size: usize) -> Pin<Arc<Thread>> {
+        unsafe { self.create_kernel_thread_unchecked(f, stack_size) }
+    }
+
+    /// Creates a new kernel-mode thread in this process that executes the provided function without checking the lifetime of the provided
+    /// closure. The stack of the new thread will be at least `stack_size` bytes large.
+    ///
+    /// # Safety
+    ///
+    /// Since the lifetime of the provided closure is not checked, it is the responsibility of the caller to ensure that the thread does not
+    /// outlive any data referenced by the provided closure.
+    ///
+    /// # Panics
+    ///
+    /// This method can only be used on the kernel process. For safety reasons, creating kernel-mode threads in user-space processes is not
+    /// allowed and attempting to do so will cause a panic.
+    pub unsafe fn create_kernel_thread_unchecked<F: FnOnce () -> () + Send>(&mut self, f: F, stack_size: usize) -> Pin<Arc<Thread>> {
         extern "C" fn run<F: FnOnce() -> ()>(ptr: *mut u8) -> ! {
             unsafe {
                 let f = *Box::from_raw(ptr as *mut F);
