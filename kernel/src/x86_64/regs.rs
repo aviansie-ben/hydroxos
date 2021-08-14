@@ -41,7 +41,9 @@ pub struct SavedBasicRegisters {
     pub ds: u16,
     pub es: u16,
     pub fs: u16,
-    pub gs: u16
+    pub gs: u16,
+    pub fsbase: u64,
+    pub gsbase: u64
 }
 
 impl SavedBasicRegisters {
@@ -55,7 +57,9 @@ impl SavedBasicRegisters {
             ds: 0,
             es: 0,
             fs: 0,
-            gs: 0
+            gs: 0,
+            fsbase: 0,
+            gsbase: 0
         }
     }
 

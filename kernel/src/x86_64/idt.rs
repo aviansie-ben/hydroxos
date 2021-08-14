@@ -68,6 +68,16 @@ unsafe extern "C" fn begin_interrupt_common() {
         "push rax",
         "push fs",
         "push gs",
+        "mov ecx, 0xc0000100",
+        "rdmsr",
+        "shl rdx, 32",
+        "or rax, rdx",
+        "push rax",
+        "add ecx, 1",
+        "rdmsr",
+        "shl rdx, 32",
+        "or rax, rdx",
+        "push rax",
         // Load the kernel's data segment.
         "mov ax, 0x10",
         "mov ds, ax",
@@ -81,8 +91,19 @@ unsafe extern "C" fn begin_interrupt_common() {
         "call {}",
         // Restore the general-purpose registers and segment selectors that were previously saved. Note that handle_interrupt may have
         // modified these values if a context switch is occurring.
+        "pop rax",
+        "pop rbx",
         "pop gs",
         "pop fs",
+        "mov rdx, rax",
+        "shr rdx, 32",
+        "mov ecx, 0xc0000101",
+        "wrmsr",
+        "mov rdx, rbx",
+        "mov rax, rbx",
+        "shr rdx, 32",
+        "sub ecx, 1",
+        "wrmsr",
         "pop rax",
         "mov es, ax",
         "pop rax",
@@ -121,6 +142,9 @@ unsafe extern "C" fn handle_interrupt(frame: &mut InterruptFrame) {
     use crate::io::tty::TtyWriter;
     use crate::io::vt;
     use crate::sched;
+
+    // TODO Load correct FS_BASE based on processor for SMP
+    x86_64::registers::model_specific::Msr::new(0xc0000100).write(*super::KERNEL_FS_BASE.get());
 
     let interrupt_num = frame.interrupt_num as u8;
 
@@ -198,6 +222,8 @@ handler_without_code!(begin_int80, 0x80);
 
 #[repr(C)]
 pub struct InterruptFrame {
+    pub gsbase: u64,
+    pub fsbase: u64,
     pub gs: u64,
     pub fs: u64,
     pub es: u64,
@@ -252,6 +278,8 @@ impl InterruptFrame {
         saved.es = self.es as u16;
         saved.fs = self.fs as u16;
         saved.gs = self.gs as u16;
+        saved.fsbase = self.fsbase;
+        saved.gsbase = self.gsbase;
     }
 
     pub fn restore(&mut self, saved: &SavedBasicRegisters) {
@@ -279,6 +307,8 @@ impl InterruptFrame {
         self.ss = saved.ss as u64;
         self.fs = saved.fs as u64;
         self.gs = saved.gs as u64;
+        self.fsbase = saved.fsbase;
+        self.gsbase = saved.gsbase;
     }
 }
 

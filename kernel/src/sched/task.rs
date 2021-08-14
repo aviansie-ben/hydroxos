@@ -556,6 +556,10 @@ impl<'a> ThreadLock<'a> {
 
         interrupt_frame.restore(&regs.basic);
         regs.ext.restore();
+
+        if self.thread().process().upgrade().unwrap().is_kernel_process() {
+            interrupt_frame.fsbase = x86_64::registers::model_specific::Msr::new(0xc0000100).read();
+        }
     }
 
     /// Gets a reference to the [`Thread`] structure that this guard has locked.

@@ -3,6 +3,7 @@ use core::ptr;
 use bootloader::BootInfo;
 
 use crate::io::vt::VirtualTerminalDisplay;
+use crate::util::SharedUnsafeCell;
 
 pub mod cpuid;
 pub mod dev;
@@ -11,6 +12,8 @@ pub mod idt;
 pub mod page;
 pub mod pic;
 pub mod regs;
+
+static KERNEL_FS_BASE: SharedUnsafeCell<u64> = SharedUnsafeCell::new(0);
 
 pub unsafe fn create_primary_display(_: &'static BootInfo) -> VirtualTerminalDisplay {
     use self::dev::vgabuf::TextBuffer;
@@ -37,6 +40,7 @@ unsafe fn init_bootstrap_tls(boot_info: &'static BootInfo) {
         ptr::write::<*mut u8>(tib as *mut *mut u8, tib as *mut u8);
 
         x86_64::registers::model_specific::Msr::new(0xc0000100).write(tib as u64);
+        *KERNEL_FS_BASE.get() = tib as u64;
     };
 }
 
