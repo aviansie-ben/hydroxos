@@ -68,6 +68,13 @@ impl ThreadWaitListInternal {
 
         if self.head.is_null() {
             self.head = thread.thread();
+        } else {
+            match *(*self.tail).lock().state_mut() {
+                ThreadState::Waiting(ref mut wait) => {
+                    wait.next = thread.thread();
+                },
+                _ => panic!("Thread {:p} in wait list {:p}, but not in waiting state", self.tail, self)
+            };
         };
         self.tail = thread.thread();
     }
