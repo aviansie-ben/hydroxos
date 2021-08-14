@@ -134,17 +134,12 @@ unsafe extern "C" fn begin_interrupt_common() {
 pub const IRQS_START: u8 = 0x20;
 pub const EXT_START: u8 = 0x30;
 
-static CTR: SharedUnsafeCell<u32> = SharedUnsafeCell::new(0);
-
 unsafe extern "C" fn handle_interrupt(frame: &mut InterruptFrame) {
-    use core::fmt::Write;
-
-    use crate::io::tty::TtyWriter;
-    use crate::io::vt;
     use crate::sched;
 
     // TODO Load correct FS_BASE based on processor for SMP
     x86_64::registers::model_specific::Msr::new(0xc0000100).write(*super::KERNEL_FS_BASE.get());
+    crate::sched::begin_interrupt();
 
     let interrupt_num = frame.interrupt_num as u8;
 
@@ -152,14 +147,13 @@ unsafe extern "C" fn handle_interrupt(frame: &mut InterruptFrame) {
         sched::begin_interrupt();
     };
 
-    writeln!(
-        TtyWriter::new(vt::get_terminal(0).unwrap().as_ref()),
-        "Got interrupt {} - {}",
-        interrupt_num,
-        *CTR.get()
-    )
-    .unwrap();
-    *CTR.get() += 1;
+    // TODO Dynamically register interrupt handlers
+    match interrupt_num {
+        0x30 => {
+            crate::sched::perform_context_switch_interrupt(Some(core::ptr::read(frame.rax as *const crate::sched::task::ThreadLock)), frame);
+        },
+        _ => {}
+    }
 
     if interrupt_num < IRQS_START {
         panic!("Unhandled exception {} (error code {})", interrupt_num, frame.error_code);
@@ -167,6 +161,8 @@ unsafe extern "C" fn handle_interrupt(frame: &mut InterruptFrame) {
         super::pic::send_eoi(interrupt_num - IRQS_START);
         sched::end_interrupt();
     };
+
+    crate::sched::end_interrupt();
 }
 
 handler_without_code!(begin_isr0, 0);
@@ -218,6 +214,7 @@ handler_without_code!(begin_irq13, 45);
 handler_without_code!(begin_irq14, 46);
 handler_without_code!(begin_irq15, 47);
 
+handler_without_code!(begin_int30, 0x30);
 handler_without_code!(begin_int80, 0x80);
 
 #[repr(C)]
@@ -471,6 +468,12 @@ pub unsafe fn init_bsp() {
         idt.entries[i] = InterruptTableEntry::new(InterruptTableEntry::OPTION_TYPE_INTERRUPT_GATE, PrivilegeLevel::Ring0, 0, Some(f));
     }
 
+    idt.entries[0x30] = InterruptTableEntry::new(
+        InterruptTableEntry::OPTION_TYPE_TRAP_GATE,
+        PrivilegeLevel::Ring0,
+        0,
+        Some(begin_int30)
+    );
     idt.entries[0x80] = InterruptTableEntry::new(
         InterruptTableEntry::OPTION_TYPE_TRAP_GATE,
         PrivilegeLevel::Ring3,

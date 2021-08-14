@@ -61,3 +61,14 @@ pub unsafe fn init_phase_1(boot_info: &'static BootInfo) {
     init_sse();
     regs::init_xsave();
 }
+
+#[naked]
+pub(crate) unsafe extern "C" fn idle() {
+    asm!(
+        "sti",
+        "hlt",
+        "jmp {}",
+        sym idle,
+        options(noreturn)
+    );
+}

@@ -210,7 +210,7 @@ impl<'a> ProcessLock<'a> {
 
     /// Attempts to dequeue a thread from this process's queue of threads that are in the ready state. If this process does not have any
     /// threads in the ready state, returns [`None`].
-    pub(super) fn dequeue_ready_thread(&mut self) -> Option<&Thread> {
+    pub(super) fn dequeue_ready_thread(&mut self) -> Option<Pin<Arc<Thread>>> {
         if !self.guard.ready_head.is_null() {
             // SAFETY: Since we have locked the process owning these threads, we have also conceptually locked their ThreadProcessInternal
             //         data. So long as the ready list is in a valid state, dequeueing a thread from it is perfectly safe.
@@ -229,7 +229,7 @@ impl<'a> ProcessLock<'a> {
                 process_internal.prev_ready = ptr::null();
                 process_internal.next_ready = ptr::null();
 
-                Some(thread)
+                Some(thread.as_arc())
             }
         } else {
             None
@@ -319,7 +319,7 @@ struct ThreadProcessInternal {
 unsafe impl Send for ThreadProcessInternal {}
 
 #[thread_local]
-static CURRENT_THREAD: UnsafeCell<Option<Pin<Arc<Thread>>>> = UnsafeCell::new(None);
+pub(super) static CURRENT_THREAD: UnsafeCell<Option<Pin<Arc<Thread>>>> = UnsafeCell::new(None);
 
 /// A structure containing state information for a thread.
 ///
@@ -386,7 +386,8 @@ impl Thread {
         Thread::current_interrupted().unwrap()
     }
 
-    /// Suspends the currently executing thread and invokes a context switch to another ready thread.
+    /// Suspends the currently executing thread and invokes a context switch to another ready thread. It is the caller's responsibility to
+    /// correctly set the state of the current thread before calling this function.
     ///
     /// # Panics
     ///
@@ -406,7 +407,30 @@ impl Thread {
             panic!("Attempt to call Thread::suspend_thread with live InterruptDisabler");
         };
 
-        todo!() // Will need a special interrupt for this to allow a context switch into another thread.
+        let thread_lock = MaybeUninit::new(thread_lock);
+        asm!(
+            "int 0x30",
+            in("rax") thread_lock.as_ptr()
+        );
+    }
+
+    /// Suspends the currently executing thread and invokes a context switch to another ready thread, leaving the current thread in the
+    /// ready state.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if any [`InterruptDisabler`](InterruptDisabler) values currently exist on this thread, aside from the one
+    /// held in the thread lock passed into this method. Context switching while an uninterruptible lock guard is held could result in a
+    /// deadlock due to the new thread trying to acquire a lock that was held prior to a context switch.
+    pub fn yield_current() {
+        let thread = Thread::current();
+        let mut thread = thread.lock();
+
+        assert!(matches!(*thread.state(), ThreadState::Running));
+        unsafe {
+            *thread.state_mut() = ThreadState::Ready;
+            Thread::suspend_current(thread);
+        }
     }
 
     /// Kills the current thread and ends execution immediately. All kernel-mode stack memory and other scheduler managed resources used by
@@ -468,6 +492,16 @@ impl Thread {
     /// guaranteed to remain exactly the same throughout the thread's lifecycle.
     pub fn debug_name<'a>(&'a self) -> impl fmt::Display + 'a {
         ThreadDebugName(self)
+    }
+
+    fn as_arc(&self) -> Pin<Arc<Thread>> {
+        // SAFETY: All thread must be in an Arc. This is true since the only way to create a thread is via Thread::create_internal, which
+        //         returns a Pin<Arc<Thread>>. Since threads created in this way must be in an Arc and cannot be moved out due to being in a
+        //         Pin, any valid &Thread must be allocated in an Arc.
+        unsafe {
+            Arc::increment_strong_count(self);
+            Pin::new_unchecked(Arc::from_raw(self))
+        }
     }
 }
 
