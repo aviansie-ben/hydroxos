@@ -6,7 +6,7 @@ edition = "2018"
 license = "MIT OR Apache-2.0"
 
 [package.metadata.bootimage]
-test-args = ["-device", "isa-debug-exit,iobase=0xf4,iosize=0x4", "-serial", "stdio", "-display", "none", "-cpu", "qemu64,+xsave"]
+test-args = ["-device", "isa-debug-exit,iobase=0xf4,iosize=0x4", "-serial", "stdio", "-display", "none", "-cpu", "qemu64,+xsave,+xsaveopt"]
 test-success-exit-code = 1
 
 [package.metadata.bootloader]
