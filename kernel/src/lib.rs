@@ -1,6 +1,7 @@
 #![no_std]
 #![cfg_attr(test, no_main)]
-#![feature(asm)]
+#![feature(asm_const)]
+#![feature(asm_sym)]
 #![feature(alloc_error_handler)]
 #![feature(custom_test_frameworks)]
 #![feature(exclusive_range_pattern)]

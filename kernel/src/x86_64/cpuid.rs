@@ -1,3 +1,5 @@
+use core::arch::asm;
+
 use crate::util::SharedUnsafeCell;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]

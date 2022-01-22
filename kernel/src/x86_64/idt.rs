@@ -1,3 +1,4 @@
+use core::arch::asm;
 use core::mem;
 
 use x86_64::instructions::tables::lidt;

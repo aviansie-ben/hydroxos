@@ -2,6 +2,7 @@
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+use core::arch::asm;
 use core::cell::UnsafeCell;
 use core::fmt;
 use core::marker::PhantomData;

@@ -1,3 +1,4 @@
+use core::arch::asm;
 use core::mem;
 
 use crate::util::SharedUnsafeCell;
@@ -378,6 +379,8 @@ pub unsafe fn init_xsave() {
 
 #[cfg(test)]
 mod test {
+    use core::arch::asm;
+
     use super::super::cpuid::{self, CpuFeature};
     use super::SavedExtendedRegisters;
     use crate::test_util::skip;
