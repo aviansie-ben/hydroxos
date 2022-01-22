@@ -293,37 +293,37 @@ impl Future<()> {
     /// Creates a future that resolves once all of the futures in the provided iterator have resolved.
     pub fn all(fs: impl IntoIterator<Item=Future<()>>) -> Future<()> {
         let (future, writer) = Future::new();
-        let wait = SendPtr(writer.into_raw());
+        let wait = SendPtr::new(writer.into_raw());
 
         unsafe {
-            (*(*wait.0).val.get()) = MaybeUninit::new(usize::MAX);
+            (*(*wait.unwrap()).val.get()) = MaybeUninit::new(usize::MAX);
         }
 
         let mut num_futures = 0;
         for mut f in fs {
             num_futures += 1;
             unsafe {
-                (*wait.0).generic.lock().wait_refs += 1;
+                (*wait.unwrap()).generic.lock().wait_refs += 1;
             }
 
             f.when_resolved(move |_| unsafe {
-                let wait_generic = (*wait.0).generic.lock();
+                let wait_generic = (*wait.unwrap()).generic.lock();
 
-                if *(*(*wait.0).val.get()).as_ptr() == 1 {
-                    FutureWriter::finish_internal(wait.0, wait_generic);
+                if *(*(*wait.unwrap()).val.get()).as_ptr() == 1 {
+                    FutureWriter::finish_internal(wait.unwrap(), wait_generic);
                 } else {
-                    *(*(*wait.0).val.get()).as_mut_ptr() -= 1;
+                    *(*(*wait.unwrap()).val.get()).as_mut_ptr() -= 1;
                 };
             });
         }
 
         unsafe {
-            let mut wait_generic = (*wait.0).generic.lock();
+            let mut wait_generic = (*wait.unwrap()).generic.lock();
 
-            *(*(*wait.0).val.get()).as_mut_ptr() -= usize::MAX - num_futures;
+            *(*(*wait.unwrap()).val.get()).as_mut_ptr() -= usize::MAX - num_futures;
 
-            if *(*(*wait.0).val.get()).as_ptr() == 0 {
-                FutureWriter::finish_internal(wait.0, wait_generic);
+            if *(*(*wait.unwrap()).val.get()).as_ptr() == 0 {
+                FutureWriter::finish_internal(wait.unwrap(), wait_generic);
             } else {
                 wait_generic.wait_refs -= 1;
             }
@@ -339,30 +339,30 @@ impl Future<()> {
     /// which could never resolve, which is generally not desired behaviour and could lead to threads hanging in an uninterruptible state.
     pub fn any(fs: impl IntoIterator<Item=Future<()>>) -> Result<Future<usize>, ()> {
         let (future, writer) = Future::new();
-        let wait = SendPtr(writer.into_raw());
+        let wait = SendPtr::new(writer.into_raw());
 
         let mut was_empty = true;
         for (i, mut f) in fs.into_iter().enumerate() {
             was_empty = false;
 
             unsafe {
-                (*wait.0).generic.lock().wait_refs += 1;
+                (*wait.unwrap()).generic.lock().wait_refs += 1;
             }
 
             f.when_resolved(move |_| unsafe {
-                let wait_generic = (*wait.0).generic.lock();
+                let wait_generic = (*wait.unwrap()).generic.lock();
 
                 if !wait_generic.resolved {
-                    *(*wait.0).val.get() = MaybeUninit::new(i);
-                    FutureWriter::finish_internal(wait.0, wait_generic);
+                    *(*wait.unwrap()).val.get() = MaybeUninit::new(i);
+                    FutureWriter::finish_internal(wait.unwrap(), wait_generic);
                 } else {
-                    Future::dec_wait_ref(wait.0, wait_generic);
+                    Future::dec_wait_ref(wait.unwrap(), wait_generic);
                 }
             })
         }
 
         unsafe {
-            (*wait.0).generic.lock().wait_refs -= 1;
+            (*wait.unwrap()).generic.lock().wait_refs -= 1;
         }
 
         if !was_empty {

@@ -116,11 +116,21 @@ impl<T: ?Sized> PinWeak<T> {
 }
 
 #[derive(Debug)]
-pub struct SendPtr<T: ?Sized>(pub *const T);
+pub struct SendPtr<T: ?Sized>(*const T);
 unsafe impl<T: ?Sized> Send for SendPtr<T> {}
 impl<T: ?Sized> Copy for SendPtr<T> {}
 impl<T: ?Sized> Clone for SendPtr<T> {
     fn clone(&self) -> Self {
         *self
+    }
+}
+
+impl <T: ?Sized> SendPtr<T> {
+    pub fn new(ptr: *const T) -> Self {
+        SendPtr(ptr)
+    }
+
+    pub fn unwrap(self) -> *const T {
+        self.0
     }
 }
