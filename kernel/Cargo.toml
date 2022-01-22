@@ -15,8 +15,8 @@ kernel-stack-size = 64
 physical-memory-offset = "0xFFFFF80000000000"
 
 [dependencies]
-bootloader = { version = "0.9.17", features = ["map_physical_memory"] }
-itertools = { version = "0.10.0", default-features = false, features = ["use_alloc"] }
-spin = "0.7.1"
-uart_16550 = "0.2.13"
-x86_64 = "0.14.1"
+bootloader = { version = "0.9.21", features = ["map_physical_memory"] }
+itertools = { version = "0.10.2", default-features = false, features = ["use_alloc"] }
+spin = "0.9.2"
+uart_16550 = "0.2.16"
+x86_64 = "0.14.7"
