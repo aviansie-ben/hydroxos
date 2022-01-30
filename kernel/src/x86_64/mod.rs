@@ -2,6 +2,7 @@ use core::arch::asm;
 use core::ptr;
 
 use bootloader::BootInfo;
+use x86_64::PhysAddr;
 
 use crate::io::vt::VirtualTerminalDisplay;
 use crate::util::SharedUnsafeCell;
@@ -19,7 +20,7 @@ static KERNEL_FS_BASE: SharedUnsafeCell<u64> = SharedUnsafeCell::new(0);
 pub unsafe fn create_primary_display(_: &'static BootInfo) -> VirtualTerminalDisplay {
     use self::dev::vgabuf::TextBuffer;
 
-    VirtualTerminalDisplay::VgaText(TextBuffer::new(0xb8000 as *mut u8, 80, 25))
+    VirtualTerminalDisplay::VgaText(TextBuffer::new(page::get_phys_mem_ptr_mut(PhysAddr::new(0xb8000)), 80, 25))
 }
 
 unsafe fn init_sse() {
@@ -48,12 +49,12 @@ unsafe fn init_bootstrap_tls(boot_info: &'static BootInfo) {
 pub unsafe fn init_phase_1(boot_info: &'static BootInfo) {
     use x86_64::instructions::interrupts;
 
+    page::init_phys_mem_base(boot_info.physical_memory_offset as *mut u8);
     init_bootstrap_tls(boot_info);
     cpuid::init_bsp();
 
     crate::io::vt::init(create_primary_display(boot_info), 1);
 
-    page::init_phys_mem_base(boot_info.physical_memory_offset as *mut u8);
     idt::init_bsp();
     pic::remap_pic(idt::IRQS_START, idt::IRQS_START + 0x8);
     pic::mask_all_irqs();
