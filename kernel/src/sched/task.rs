@@ -11,7 +11,7 @@ use core::pin::Pin;
 use core::ptr;
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use super::wait::ThreadWaitState;
+use super::wait::{ThreadWaitList, ThreadWaitState};
 use crate::sync::uninterruptible::{InterruptDisabler, UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
 use crate::util::{PinWeak, SharedUnsafeCell};
 use crate::x86_64::idt::InterruptFrame;
@@ -294,7 +294,7 @@ pub enum ThreadState {
     /// The thread is currently suspended and can be resumed by calling [`ThreadLock::wake`].
     Suspended,
     /// The thread is currently waiting on a [`ThreadWaitList`](super::wait::ThreadWaitList).
-    Waiting(ThreadWaitState),
+    Waiting(*const ThreadWaitList),
     /// The thread is ready to run, but is not currently scheduled on a CPU core.
     Ready,
     /// The thread is currently running on a CPU core.
@@ -331,7 +331,8 @@ pub struct Thread {
     process: PinWeak<Process>,
     thread_id: u64,
     internal: UninterruptibleSpinlock<ThreadInternal>,
-    process_internal: SharedUnsafeCell<ThreadProcessInternal>
+    process_internal: SharedUnsafeCell<ThreadProcessInternal>,
+    wait_state: SharedUnsafeCell<ThreadWaitState>
 }
 
 impl !Unpin for Thread {}
@@ -350,7 +351,8 @@ impl Thread {
                 next: None,
                 prev_ready: ptr::null(),
                 next_ready: ptr::null()
-            })
+            }),
+            wait_state: SharedUnsafeCell::new(ThreadWaitState::new())
         });
 
         process_lock.guard.next_thread_id += 1;
@@ -495,14 +497,37 @@ impl Thread {
         ThreadDebugName(self)
     }
 
-    fn as_arc(&self) -> Pin<Arc<Thread>> {
+    pub(super) fn wait_state(&self) -> *mut ThreadWaitState {
+        self.wait_state.get()
+    }
+
+    pub(super) fn as_arc(&self) -> Pin<Arc<Thread>> {
         // SAFETY: All thread must be in an Arc. This is true since the only way to create a thread is via Thread::create_internal, which
         //         returns a Pin<Arc<Thread>>. Since threads created in this way must be in an Arc and cannot be moved out due to being in a
         //         Pin, any valid &Thread must be allocated in an Arc.
         unsafe {
             Arc::increment_strong_count(self);
-            Pin::new_unchecked(Arc::from_raw(self))
+            Thread::from_raw(self)
         }
+    }
+
+    /// Converts a reference to this thread into a raw pointer that can be passed into [`Thread::from_raw`] to recreate it.
+    ///
+    /// Doing this keeps a strong reference to this thread active until such a time as the reference is recreated. Failing to recreate the
+    /// reference will lead to the memory making up this thread being permanently leaked.
+    pub fn into_raw(self: Pin<Arc<Thread>>) -> *const Thread {
+        Arc::into_raw(unsafe { Pin::into_inner_unchecked(self) })
+    }
+
+    /// Converts a pointer obtained from [`Thread::into_raw`] back into a reference to this thread.
+    ///
+    /// # Safety
+    ///
+    /// In order to ensure that the reference count of this thread remains correct, each pointer returned from [`Thread::into_raw`] should
+    /// be used to call this function _exactly one time_. If you do not intend to consume the pointer passed in, use [`Thread::as_arc`]
+    /// instead.
+    pub unsafe fn from_raw(ptr: *const Thread) -> Pin<Arc<Thread>> {
+        Pin::new_unchecked(Arc::from_raw(ptr))
     }
 }
 

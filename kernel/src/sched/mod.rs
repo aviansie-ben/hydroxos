@@ -3,10 +3,8 @@
 //! This module contains the kernel's scheduler, which is responsible for keeping track of processes and threads running on the machine and
 //! facilitating context switching between them from interrupt handlers.
 
-use alloc::sync::Arc;
 use core::cell::UnsafeCell;
 use core::mem;
-use core::pin::Pin;
 
 use crate::x86_64::idt::InterruptFrame;
 
@@ -100,8 +98,6 @@ pub unsafe fn perform_context_switch_interrupt(old_thread_lock: Option<task::Thr
 
 #[cfg(test)]
 mod test {
-    use alloc::boxed::Box;
-    use core::pin::Pin;
     use core::sync::atomic::{AtomicBool, Ordering};
 
     use super::task::*;

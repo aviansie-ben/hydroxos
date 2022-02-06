@@ -1,5 +1,6 @@
 //! Low-level synchronization primitives for inter-thread synchronization.
 
+use alloc::sync::Arc;
 use core::mem::{ManuallyDrop, MaybeUninit};
 use core::pin::Pin;
 use core::ptr;
@@ -9,13 +10,23 @@ use crate::sync::UninterruptibleSpinlock;
 
 /// State information for a thread which is waiting on a wait list.
 #[derive(Debug)]
-pub struct ThreadWaitState {
-    list: *const ThreadWaitList,
+pub(super) struct ThreadWaitState {
     prev: *const Thread,
-    next: *const Thread
+    next: *const Thread,
+    valid: bool
 }
 
 unsafe impl Send for ThreadWaitState {}
+
+impl ThreadWaitState {
+    pub fn new() -> ThreadWaitState {
+        ThreadWaitState {
+            prev: ptr::null(),
+            next: ptr::null(),
+            valid: false
+        }
+    }
+}
 
 struct ThreadWaitListInternal {
     head: *const Thread,
@@ -25,58 +36,44 @@ struct ThreadWaitListInternal {
 unsafe impl Send for ThreadWaitListInternal {}
 
 impl ThreadWaitListInternal {
-    fn dequeue(&mut self, list: *const ThreadWaitList) -> Option<ThreadLock> {
+    fn dequeue(&mut self) -> Option<Pin<Arc<Thread>>> {
         if !self.head.is_null() {
-            // SAFETY: So long as the wait list is in a valid state, head should either point at a valid thread or be null
-            let thread_lock = unsafe { (*self.head).lock() };
+            // SAFETY: When the thread was enqueued, into_raw was called on it exactly one time.
+            let thread = unsafe { Thread::from_raw(self.head) };
 
-            if let ThreadState::Waiting(ref state) = thread_lock.state() {
-                if state.list != list {
-                    panic!(
-                        "{} present in wait list {:p}, but is in state {:?}",
-                        thread_lock.thread().debug_name(),
-                        self,
-                        thread_lock.state()
-                    );
-                };
+            // SAFETY: The wait list effectively has a mutable borrow of the wait states of all threads that appear on it.
+            unsafe {
+                assert!((*(*thread).wait_state()).valid);
+                (*(*thread).wait_state()).valid = false;
 
-                self.head = state.next;
+                self.head = (*(*thread).wait_state()).next;
                 if self.head.is_null() {
                     self.tail = ptr::null();
-                };
-            } else {
-                panic!(
-                    "{} present in wait list {:p}, but is in state {:?}",
-                    thread_lock.thread().debug_name(),
-                    self,
-                    thread_lock.state()
-                );
-            };
+                } else {
+                    (*(*self.head).wait_state()).prev = ptr::null();
+                }
+            }
 
-            Some(thread_lock)
+
+            Some(thread)
         } else {
             None
         }
     }
 
-    unsafe fn enqueue(&mut self, thread: &mut ThreadLock, list: *const ThreadWaitList) {
-        *thread.state_mut() = ThreadState::Waiting(ThreadWaitState {
-            list,
-            prev: self.tail,
-            next: ptr::null()
-        });
+    unsafe fn enqueue(&mut self, thread: Pin<Arc<Thread>>) {
+        assert!(!(*thread.wait_state()).valid);
 
-        if self.head.is_null() {
-            self.head = thread.thread();
+        (*thread.wait_state()).prev = self.tail;
+        (*thread.wait_state()).next = ptr::null();
+        (*thread.wait_state()).valid = true;
+
+        if self.tail.is_null() {
+            self.head = &*thread;
         } else {
-            match *(*self.tail).lock().state_mut() {
-                ThreadState::Waiting(ref mut wait) => {
-                    wait.next = thread.thread();
-                },
-                _ => panic!("Thread {:p} in wait list {:p}, but not in waiting state", self.tail, self)
-            };
+            (*(*self.tail).wait_state()).next = &*thread;
         };
-        self.tail = thread.thread();
+        self.tail = thread.into_raw();
     }
 }
 
@@ -149,20 +146,34 @@ impl ThreadWaitList {
     #[must_use]
     pub fn wait(self: Pin<&Self>) -> ThreadWait {
         unsafe {
-            let mut internal = self.internal.lock();
-
             // SAFETY: This thread reference never leaves the current thread. Since this references the current thread, it must continue to
             //         exist while this thread is still executing, so extending its lifetime like this is safe.
             let mut thread = (*(&*Thread::current() as *const Thread)).lock();
+            let mut internal = self.internal.lock();
 
             assert!(matches!(*thread.state(), ThreadState::Running));
+            *thread.state_mut() = ThreadState::Waiting(&*self);
 
             // SAFETY: The only way for the caller to release the thread lock at this point would be to either call ThreadWait::suspend or
             //         drop the returned ThreadWait, which will unconditionally panic. If the returned ThreadWait is leaked, then the thread
             //         is never unlocked and the improper state updates can never be observed. Obviously, this is undesirable but does not
             //         have any implications for safety guarantees.
-            internal.enqueue(&mut thread, self.get_ref());
+            internal.enqueue(thread.thread().as_arc());
             ThreadWait(MaybeUninit::new(thread))
+        }
+    }
+
+    unsafe fn try_wake(&self, mut thread: ThreadLock) -> bool {
+        match *thread.state() {
+            ThreadState::Dead => false,
+            ThreadState::Waiting(list) if list == self => {
+                *thread.state_mut() = ThreadState::Suspended;
+                thread.wake();
+                true
+            },
+            ref state => {
+                panic!("Thread {} is in unexpected state {:?} after dequeueing from wait list", thread.thread().debug_name(), state);
+            }
         }
     }
 
@@ -174,16 +185,19 @@ impl ThreadWaitList {
     /// This method should not be called while any scheduler locks, such as thread and process locks, are held. Doing so may result in a
     /// deadlock occurring.
     pub fn wake_one(&self) -> bool {
-        if let Some(mut thread) = self.internal.lock().dequeue(self) {
-            // SAFETY: A waiting -> ready transition (via suspended) is safe since the event the thread was waiting on has now occurred.
-            unsafe {
-                *thread.state_mut() = ThreadState::Suspended;
-                thread.wake();
-            };
+        loop {
+            break if let Some(thread) = self.internal.lock().dequeue() {
+                // SAFETY: A waiting -> ready transition is safe since the event the thread was waiting on has now occurred.
+                unsafe {
+                    if !self.try_wake(thread.lock()) {
+                        continue;
+                    }
+                };
 
-            true
-        } else {
-            false
+                true
+            } else {
+                false
+            };
         }
     }
 
@@ -195,16 +209,14 @@ impl ThreadWaitList {
     /// deadlock occurring.
     pub fn wake_all(&self) -> usize {
         let mut num_woken = 0;
-        let mut lock = self.internal.lock();
 
-        while let Some(mut thread) = lock.dequeue(self) {
+        while let Some(thread) = self.internal.lock().dequeue() {
             // SAFETY: A waiting -> ready transition (via suspended) is safe since the event the thread was waiting on has now occurred.
             unsafe {
-                *thread.state_mut() = ThreadState::Suspended;
-                thread.wake();
+                if self.try_wake(thread.lock()) {
+                    num_woken += 1;
+                }
             };
-
-            num_woken += 1;
         }
 
         num_woken
@@ -222,7 +234,6 @@ impl Drop for ThreadWaitList {
 #[cfg(test)]
 mod test {
     use alloc::boxed::Box;
-    use core::pin::Pin;
     use core::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
     use super::super::task::{Process, Thread};
