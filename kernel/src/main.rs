@@ -14,11 +14,13 @@ entry_point!(kernel_main);
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     use core::fmt::Write;
 
-    use hydroxos_kernel::{early_alloc, io, sched, x86_64};
+    use hydroxos_kernel::{early_alloc, frame_alloc, io, sched, x86_64};
 
     unsafe {
         early_alloc::init();
         x86_64::init_phase_1(boot_info);
+        frame_alloc::init(boot_info);
+
         sched::init();
     };
 

@@ -3,6 +3,7 @@
 #![feature(asm_const)]
 #![feature(asm_sym)]
 #![feature(alloc_error_handler)]
+#![feature(const_fn_trait_bound)]
 #![feature(const_mut_refs)]
 #![feature(custom_test_frameworks)]
 #![feature(exclusive_range_pattern)]
@@ -39,6 +40,7 @@ mod test {
         unsafe {
             crate::early_alloc::init();
             crate::x86_64::init_phase_1(boot_info);
+            crate::frame_alloc::init(boot_info);
             crate::sched::init();
         };
         crate::test_harness_main();

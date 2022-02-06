@@ -2,8 +2,10 @@
 
 use core::mem::MaybeUninit;
 
-use x86_64::PhysAddr;
+use bootloader::BootInfo;
+use bootloader::bootinfo::MemoryRegionType;
 
+use crate::sync::uninterruptible::{UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
 use crate::x86_64::page::get_phys_mem_base;
 
 const NUM_FRAMES_PER_PAGE: usize = crate::x86_64::page::PAGE_SIZE / core::mem::size_of::<x86_64::PhysAddr>();
@@ -99,7 +101,7 @@ impl StackFrameAllocator {
 }
 
 impl FrameAllocator for StackFrameAllocator {
-    unsafe fn free_one(&mut self, frame: PhysAddr) {
+    unsafe fn free_one(&mut self, frame: x86_64::PhysAddr) {
         if self.num_frames_available == 0 {
             self.stack_top = get_phys_mem_base().offset(frame.as_u64() as isize) as *mut StackFrameAllocatorPage;
             (*self.stack_top).frames[0] = x86_64::PhysAddr::zero();
@@ -119,7 +121,7 @@ impl FrameAllocator for StackFrameAllocator {
         self.num_frames_available += 1;
     }
 
-    fn alloc_one(&mut self) -> Option<PhysAddr> {
+    fn alloc_one(&mut self) -> Option<x86_64::PhysAddr> {
         unsafe {
             if self.num_frames_available == 0 {
                 None
@@ -150,6 +152,57 @@ impl FrameAllocator for StackFrameAllocator {
 }
 
 unsafe impl Send for StackFrameAllocator {}
+
+pub struct LockFrameAllocator<T: FrameAllocator>(UninterruptibleSpinlock<T>);
+
+impl <T: FrameAllocator> LockFrameAllocator<T> {
+    pub const fn new(alloc: T) -> LockFrameAllocator<T> {
+        LockFrameAllocator(UninterruptibleSpinlock::new(alloc))
+    }
+
+    pub fn lock(&self) -> UninterruptibleSpinlockGuard<T> {
+        self.0.lock()
+    }
+}
+
+impl <T: FrameAllocator> FrameAllocator for &'_ LockFrameAllocator<T> {
+    unsafe fn free_one(&mut self, frame: x86_64::PhysAddr) {
+        self.lock().free_one(frame);
+    }
+
+    fn alloc_one(&mut self) -> Option<x86_64::PhysAddr> {
+        self.lock().alloc_one()
+    }
+
+    fn num_frames_available(&self) -> usize {
+        self.lock().num_frames_available()
+    }
+
+    unsafe fn free_many(&mut self, frames: &[x86_64::PhysAddr]) {
+        self.lock().free_many(frames)
+    }
+
+    fn alloc_many<'a>(&mut self, frames_out: &'a mut [MaybeUninit<x86_64::PhysAddr>]) -> Option<&'a mut [x86_64::PhysAddr]> {
+        self.lock().alloc_many(frames_out)
+    }
+}
+
+static FRAME_ALLOC: LockFrameAllocator<StackFrameAllocator> = LockFrameAllocator::new(StackFrameAllocator::new());
+
+pub fn get_allocator() -> &'static LockFrameAllocator<impl FrameAllocator> {
+    &FRAME_ALLOC
+}
+
+pub unsafe fn init(boot_info: &BootInfo) {
+    let mut frame_alloc = get_allocator().lock();
+    for region in boot_info.memory_map.iter() {
+        if region.region_type == MemoryRegionType::Usable {
+            for frame_n in region.range.start_frame_number..region.range.end_frame_number {
+                frame_alloc.free_one(x86_64::PhysAddr::new(frame_n * crate::x86_64::page::PAGE_SIZE as u64));
+            };
+        };
+    };
+}
 
 #[cfg(test)]
 mod tests {
