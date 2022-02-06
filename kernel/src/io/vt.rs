@@ -3,11 +3,10 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::iter::FromIterator;
 
+use crate::io::ansi::{AnsiParser, AnsiParserAction};
 use crate::io::tty::Tty;
 use crate::sync::{Future, UninterruptibleSpinlock};
 use crate::x86_64::dev::vgabuf;
-
-const MAX_CSI_LENGTH: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct VTChar {
@@ -17,20 +16,11 @@ struct VTChar {
 }
 
 #[derive(Debug)]
-enum VirtualTerminalState {
-    Normal,
-    PartialUtf8(usize, usize),
-    Escape,
-    PartialCsi(usize)
-}
-
-#[derive(Debug)]
 struct VirtualTerminalInternals {
     buf: Box<[VTChar]>,
     buf_line: usize,
     size: (usize, usize),
-    state: VirtualTerminalState,
-    partial_buf: [u8; MAX_CSI_LENGTH],
+    ansi: AnsiParser,
     cursor_pos: (usize, usize),
     fg_color: vgabuf::Color,
     bg_color: vgabuf::Color,
@@ -137,68 +127,11 @@ impl VirtualTerminalInternals {
     }
 
     fn write_byte(&mut self, b: u8) {
-        match self.state {
-            VirtualTerminalState::Normal => match b {
-                b'\x1b' => {
-                    self.state = VirtualTerminalState::Escape;
-                },
-                b'\xc0'..=b'\xdf' => {
-                    self.partial_buf[0] = b;
-                    self.state = VirtualTerminalState::PartialUtf8(1, 2);
-                },
-                b'\xe0'..=b'\xef' => {
-                    self.partial_buf[0] = b;
-                    self.state = VirtualTerminalState::PartialUtf8(1, 3);
-                },
-                b'\xf0'..=b'\xff' => {
-                    self.partial_buf[0] = b;
-                    self.state = VirtualTerminalState::PartialUtf8(1, 4);
-                },
-                _ => {
-                    self.write_char(b as char);
-                }
+        match self.ansi.write(b) {
+            Some(AnsiParserAction::WriteChar(ch)) => {
+                self.write_char(ch);
             },
-            VirtualTerminalState::PartialUtf8(i, len) => {
-                self.partial_buf[i] = b;
-
-                if i + 1 == len {
-                    self.write_char(if let Ok(s) = core::str::from_utf8(&self.partial_buf[0..len]) {
-                        s.chars().next().unwrap()
-                    } else {
-                        '\u{fffd}'
-                    });
-                    self.state = VirtualTerminalState::Normal;
-                } else {
-                    self.state = VirtualTerminalState::PartialUtf8(i + 1, len);
-                };
-            },
-            VirtualTerminalState::Escape => match b {
-                b'[' => {
-                    self.state = VirtualTerminalState::PartialCsi(0);
-                },
-                _ => {
-                    self.state = VirtualTerminalState::Normal;
-                }
-            },
-            VirtualTerminalState::PartialCsi(MAX_CSI_LENGTH) => match b {
-                b'@'..b'~' => {
-                    self.state = VirtualTerminalState::Normal;
-                },
-                _ => {}
-            },
-            VirtualTerminalState::PartialCsi(i) => {
-                self.partial_buf[i] = b;
-
-                match b {
-                    b'@'..b'~' => {
-                        // TODO Execute CSI
-                        self.state = VirtualTerminalState::Normal;
-                    },
-                    _ => {
-                        self.state = VirtualTerminalState::PartialCsi(i + 1);
-                    }
-                }
-            }
+            None => {}
         }
     }
 
@@ -255,8 +188,7 @@ impl VirtualTerminal {
             .into_boxed_slice(),
             buf_line: 0,
             size: (width, height),
-            state: VirtualTerminalState::Normal,
-            partial_buf: [0; MAX_CSI_LENGTH],
+            ansi: AnsiParser::new(),
             cursor_pos: (0, 0),
             fg_color: vgabuf::Color::White,
             bg_color: vgabuf::Color::Black,
