@@ -20,6 +20,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         early_alloc::init();
         x86_64::init_phase_1(boot_info);
         frame_alloc::init(boot_info);
+        x86_64::init_phase_2(boot_info);
 
         sched::init();
     };

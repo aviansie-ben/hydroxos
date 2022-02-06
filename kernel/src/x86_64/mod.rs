@@ -65,6 +65,10 @@ pub unsafe fn init_phase_1(boot_info: &'static BootInfo) {
     regs::init_xsave();
 }
 
+pub unsafe fn init_phase_2(_boot_info: &'static BootInfo) {
+    page::init_kernel_addrspace();
+}
+
 #[naked]
 pub(crate) unsafe extern "C" fn idle() {
     asm!(

@@ -41,6 +41,7 @@ mod test {
             crate::early_alloc::init();
             crate::x86_64::init_phase_1(boot_info);
             crate::frame_alloc::init(boot_info);
+            crate::x86_64::init_phase_2(boot_info);
             crate::sched::init();
         };
         crate::test_harness_main();
