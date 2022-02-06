@@ -3,6 +3,7 @@
 #![feature(asm_const)]
 #![feature(asm_sym)]
 #![feature(alloc_error_handler)]
+#![feature(const_mut_refs)]
 #![feature(custom_test_frameworks)]
 #![feature(exclusive_range_pattern)]
 #![feature(naked_functions)]

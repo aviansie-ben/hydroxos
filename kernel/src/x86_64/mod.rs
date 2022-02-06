@@ -55,6 +55,7 @@ pub unsafe fn init_phase_1(boot_info: &'static BootInfo) {
 
     crate::io::vt::init(create_primary_display(boot_info), 1);
 
+    gdt::init();
     idt::init_bsp();
     pic::remap_pic(idt::IRQS_START, idt::IRQS_START + 0x8);
     pic::mask_all_irqs();

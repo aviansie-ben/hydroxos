@@ -80,7 +80,7 @@ unsafe extern "C" fn begin_interrupt_common() {
         "or rax, rdx",
         "push rax",
         // Load the kernel's data segment.
-        "mov ax, 0x10",
+        "mov ax, {}",
         "mov ds, ax",
         "mov es, ax",
         "mov fs, ax",
@@ -127,6 +127,7 @@ unsafe extern "C" fn begin_interrupt_common() {
         // Skip the interrupt number and error code that were previously pushed onto the stack and then return from the interrupt.
         "add rsp, 16",
         "iretq",
+        const super::gdt::KERNEL_DS.0,
         sym handle_interrupt,
         options(noreturn)
     );
@@ -369,7 +370,7 @@ impl InterruptTableEntry {
         if let Some(f) = f {
             let f = f as u64;
 
-            self.segment = x86_64::instructions::segmentation::cs().0;
+            self.segment = super::gdt::KERNEL_CS.0;
             self.offset_0 = f as u16;
             self.offset_1 = (f >> 16) as u16;
             self.offset_2 = (f >> 32) as u32;
