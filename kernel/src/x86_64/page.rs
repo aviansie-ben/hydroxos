@@ -1,20 +1,19 @@
-use x86_64::PhysAddr;
 use x86_64::registers::control::Cr3;
-use x86_64::structures::paging::{FrameDeallocator, MappedPageTable, PageTable, PageTableFlags, PageTableIndex, PhysFrame, Size4KiB};
 use x86_64::structures::paging::mapper::PageTableFrameMapping;
 use x86_64::structures::paging::page_table::PageTableEntry;
+use x86_64::structures::paging::{FrameDeallocator, MappedPageTable, PageTable, PageTableFlags, PageTableIndex, PhysFrame, Size4KiB};
+use x86_64::PhysAddr;
 
 use crate::frame_alloc::FrameAllocator;
 use crate::sync::uninterruptible::UninterruptibleSpinlockGuard;
 use crate::sync::UninterruptibleSpinlock;
-
 use crate::util::SharedUnsafeCell;
 
 pub const PAGE_SIZE: usize = 4096;
 
 static PHYS_MEM_BASE: SharedUnsafeCell<*mut u8> = SharedUnsafeCell::new(core::ptr::null_mut());
-static KERNEL_ADDRESS_SPACE: SharedUnsafeCell<UninterruptibleSpinlock<AddressSpace>>
-    = SharedUnsafeCell::new(UninterruptibleSpinlock::new(unsafe { AddressSpace::from_ptr(PhysAddr::zero()) }));
+static KERNEL_ADDRESS_SPACE: SharedUnsafeCell<UninterruptibleSpinlock<AddressSpace>> =
+    SharedUnsafeCell::new(UninterruptibleSpinlock::new(unsafe { AddressSpace::from_ptr(PhysAddr::zero()) }));
 
 pub fn init_phys_mem_base(phys_mem_base: *mut u8) {
     unsafe {
@@ -50,7 +49,7 @@ unsafe impl PageTableFrameMapping for PhysPageTableFrameMapping {
 
 struct PhysFrameDeallocator<'a, T: FrameAllocator>(&'a mut T);
 
-impl <'a, T: FrameAllocator> FrameDeallocator<Size4KiB> for PhysFrameDeallocator<'a, T> {
+impl<'a, T: FrameAllocator> FrameDeallocator<Size4KiB> for PhysFrameDeallocator<'a, T> {
     unsafe fn deallocate_frame(&mut self, frame: PhysFrame<Size4KiB>) {
         self.0.free_one(frame.start_address())
     }
@@ -81,7 +80,7 @@ impl AddressSpace {
             for i in 0..256 {
                 let i = PageTableIndex::new(i);
                 l4_table[i] = PageTableEntry::new();
-            };
+            }
 
             {
                 let mut kernel_addrspace = AddressSpace::kernel();
@@ -91,7 +90,7 @@ impl AddressSpace {
                 for i in 256..512 {
                     let i = PageTableIndex::new(i);
                     l4_table[i] = kl4_table[i].clone();
-                };
+                }
             };
 
             addrspace
@@ -99,9 +98,7 @@ impl AddressSpace {
     }
 
     fn as_page_table(&mut self) -> MappedPageTable<impl PageTableFrameMapping> {
-        unsafe {
-            MappedPageTable::new(&mut *(get_phys_mem_ptr_mut(self.0) as *mut PageTable), PhysPageTableFrameMapping)
-        }
+        unsafe { MappedPageTable::new(&mut *(get_phys_mem_ptr_mut(self.0) as *mut PageTable), PhysPageTableFrameMapping) }
     }
 }
 
@@ -125,7 +122,7 @@ pub unsafe fn init_kernel_addrspace() {
         for i in 0..256 {
             let i = PageTableIndex::new(i);
             kl4_table.level_4_table()[i].set_addr(PhysAddr::zero(), PageTableFlags::empty());
-        };
+        }
 
         // All address spaces will have the same mappings for the upper entries. In order to allow pages in this area to be mapped into all
         // address spaces without needing to potentially update the L4 page tables of all address spaces, the L4 page table must have all of
@@ -133,12 +130,9 @@ pub unsafe fn init_kernel_addrspace() {
         for i in 256..512 {
             let i = PageTableIndex::new(i);
             if kl4_table.level_4_table()[i].is_unused() {
-                kl4_table.level_4_table()[i].set_addr(
-                    frame_alloc.alloc_one().unwrap(),
-                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE
-                );
+                kl4_table.level_4_table()[i].set_addr(frame_alloc.alloc_one().unwrap(), PageTableFlags::PRESENT | PageTableFlags::WRITABLE);
             };
-        };
+        }
 
         x86_64::instructions::tlb::flush_all();
     };

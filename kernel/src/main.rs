@@ -16,8 +16,8 @@ entry_point!(kernel_main);
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     use core::fmt::Write;
 
-    use hydroxos_kernel::{early_alloc, frame_alloc, io, log, sched, x86_64};
     use hydroxos_kernel::frame_alloc::FrameAllocator;
+    use hydroxos_kernel::{early_alloc, frame_alloc, io, log, sched, x86_64};
 
     unsafe {
         early_alloc::init();
@@ -28,9 +28,13 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         log::init(io::vt::get_terminal(0).unwrap());
 
         log!(Info, "kernel", "Booting HydroxOS v{}", env!("CARGO_PKG_VERSION"));
-        log!(Debug, "kernel", "Detected {} MiB memory, {} MiB free",
+        log!(
+            Debug,
+            "kernel",
+            "Detected {} MiB memory, {} MiB free",
             num_frames * x86_64::page::PAGE_SIZE / (1024 * 1024),
-            frame_alloc::get_allocator().num_frames_available() * x86_64::page::PAGE_SIZE / (1024 * 1024));
+            frame_alloc::get_allocator().num_frames_available() * x86_64::page::PAGE_SIZE / (1024 * 1024)
+        );
 
         x86_64::init_phase_2(boot_info);
 

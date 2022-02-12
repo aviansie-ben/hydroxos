@@ -2,8 +2,8 @@
 
 use core::mem::MaybeUninit;
 
-use bootloader::BootInfo;
 use bootloader::bootinfo::MemoryRegionType;
+use bootloader::BootInfo;
 
 use crate::sync::uninterruptible::{UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
 use crate::x86_64::page::get_phys_mem_base;
@@ -155,7 +155,7 @@ unsafe impl Send for StackFrameAllocator {}
 
 pub struct LockFrameAllocator<T: FrameAllocator>(UninterruptibleSpinlock<T>);
 
-impl <T: FrameAllocator> LockFrameAllocator<T> {
+impl<T: FrameAllocator> LockFrameAllocator<T> {
     pub const fn new(alloc: T) -> LockFrameAllocator<T> {
         LockFrameAllocator(UninterruptibleSpinlock::new(alloc))
     }
@@ -165,7 +165,7 @@ impl <T: FrameAllocator> LockFrameAllocator<T> {
     }
 }
 
-impl <T: FrameAllocator> FrameAllocator for &'_ LockFrameAllocator<T> {
+impl<T: FrameAllocator> FrameAllocator for &'_ LockFrameAllocator<T> {
     unsafe fn free_one(&mut self, frame: x86_64::PhysAddr) {
         self.lock().free_one(frame);
     }
@@ -224,13 +224,13 @@ pub unsafe fn init(boot_info: &BootInfo) -> usize {
         if is_free(region.region_type) {
             for frame_n in region.range.start_frame_number..region.range.end_frame_number {
                 frame_alloc.free_one(x86_64::PhysAddr::new(frame_n * crate::x86_64::page::PAGE_SIZE as u64));
-            };
+            }
         };
 
         if is_usable(region.region_type) {
             num_frames += region.range.end_frame_number - region.range.start_frame_number;
         };
-    };
+    }
 
     num_frames.try_into().unwrap()
 }

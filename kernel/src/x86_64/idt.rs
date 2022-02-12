@@ -152,7 +152,10 @@ unsafe extern "C" fn handle_interrupt(frame: &mut InterruptFrame) {
     // TODO Dynamically register interrupt handlers
     match interrupt_num {
         0x30 => {
-            crate::sched::perform_context_switch_interrupt(Some(core::ptr::read(frame.rax as *const crate::sched::task::ThreadLock)), frame);
+            crate::sched::perform_context_switch_interrupt(
+                Some(core::ptr::read(frame.rax as *const crate::sched::task::ThreadLock)),
+                frame
+            );
         },
         _ => {}
     }

@@ -291,7 +291,7 @@ impl<T> Future<T> {
 
 impl Future<()> {
     /// Creates a future that resolves once all of the futures in the provided iterator have resolved.
-    pub fn all(fs: impl IntoIterator<Item=Future<()>>) -> Future<()> {
+    pub fn all(fs: impl IntoIterator<Item = Future<()>>) -> Future<()> {
         let (future, writer) = Future::new();
         let wait = SendPtr::new(writer.into_raw());
 
@@ -337,7 +337,7 @@ impl Future<()> {
     ///
     /// This function will return `Err(())` if provided with an empty iterator. Creating a future in this case would result in a future
     /// which could never resolve, which is generally not desired behaviour and could lead to threads hanging in an uninterruptible state.
-    pub fn any(fs: impl IntoIterator<Item=Future<()>>) -> Result<Future<usize>, ()> {
+    pub fn any(fs: impl IntoIterator<Item = Future<()>>) -> Result<Future<usize>, ()> {
         let (future, writer) = Future::new();
         let wait = SendPtr::new(writer.into_raw());
 

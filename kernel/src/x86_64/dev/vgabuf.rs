@@ -1,6 +1,7 @@
 use core::fmt;
 
 use x86_64::instructions::port::Port;
+
 use crate::io::ansi::AnsiColor;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

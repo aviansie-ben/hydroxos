@@ -161,7 +161,10 @@ impl AnsiParser {
     pub const MAX_SGR_CMDS: usize = 8;
 
     pub fn new() -> AnsiParser {
-        AnsiParser { state: AnsiParserState::Normal, partial_buf: [0; AnsiParser::MAX_CSI_LENGTH] }
+        AnsiParser {
+            state: AnsiParserState::Normal,
+            partial_buf: [0; AnsiParser::MAX_CSI_LENGTH]
+        }
     }
 
     pub fn reset(&mut self) {
@@ -190,20 +193,20 @@ impl AnsiParser {
                     self.state = AnsiParserState::PartialUtf8(1, 4);
                     None
                 },
-                _ => {
-                    Some(AnsiParserAction::WriteChar(b as char))
-                }
+                _ => Some(AnsiParserAction::WriteChar(b as char))
             },
             AnsiParserState::PartialUtf8(i, len) => {
                 self.partial_buf[i] = b;
 
                 if i + 1 == len {
                     self.state = AnsiParserState::Normal;
-                    Some(AnsiParserAction::WriteChar(if let Ok(s) = core::str::from_utf8(&self.partial_buf[0..len]) {
-                        s.chars().next().unwrap()
-                    } else {
-                        '\u{fffd}'
-                    }))
+                    Some(AnsiParserAction::WriteChar(
+                        if let Ok(s) = core::str::from_utf8(&self.partial_buf[0..len]) {
+                            s.chars().next().unwrap()
+                        } else {
+                            '\u{fffd}'
+                        }
+                    ))
                 } else {
                     self.state = AnsiParserState::PartialUtf8(i + 1, len);
                     None

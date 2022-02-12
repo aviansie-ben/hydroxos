@@ -54,7 +54,6 @@ impl ThreadWaitListInternal {
                 }
             }
 
-
             Some(thread)
         } else {
             None
@@ -172,7 +171,11 @@ impl ThreadWaitList {
                 true
             },
             ref state => {
-                panic!("Thread {} is in unexpected state {:?} after dequeueing from wait list", thread.thread().debug_name(), state);
+                panic!(
+                    "Thread {} is in unexpected state {:?} after dequeueing from wait list",
+                    thread.thread().debug_name(),
+                    state
+                );
             }
         }
     }

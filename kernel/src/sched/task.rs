@@ -164,7 +164,7 @@ impl<'a> ProcessLock<'a> {
     ///
     /// This method can only be used on the kernel process. For safety reasons, creating kernel-mode threads in user-space processes is not
     /// allowed and attempting to do so will cause a panic.
-    pub unsafe fn create_kernel_thread_unchecked<F: FnOnce () -> () + Send>(&mut self, f: F, stack_size: usize) -> Pin<Arc<Thread>> {
+    pub unsafe fn create_kernel_thread_unchecked<F: FnOnce() -> () + Send>(&mut self, f: F, stack_size: usize) -> Pin<Arc<Thread>> {
         extern "C" fn run<F: FnOnce() -> ()>(ptr: *mut u8) -> ! {
             unsafe {
                 let f = *Box::from_raw(ptr as *mut F);

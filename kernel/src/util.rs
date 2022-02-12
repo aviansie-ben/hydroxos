@@ -125,7 +125,7 @@ impl<T: ?Sized> Clone for SendPtr<T> {
     }
 }
 
-impl <T: ?Sized> SendPtr<T> {
+impl<T: ?Sized> SendPtr<T> {
     pub fn new(ptr: *const T) -> Self {
         SendPtr(ptr)
     }

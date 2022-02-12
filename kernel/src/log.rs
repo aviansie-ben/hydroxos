@@ -2,8 +2,8 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
-use crate::io::ansi::AnsiColor;
 
+use crate::io::ansi::AnsiColor;
 use crate::io::tty::Tty;
 use crate::sync::{Future, UninterruptibleSpinlock};
 
@@ -50,10 +50,9 @@ pub fn init(out: Arc<dyn Tty + Send + Sync>) {
 pub fn log_msg(msg: String) {
     Future::all(OUT_TTY.lock().iter().map(|tty| {
         // SAFETY: Backing memory for msg is kept alive until all writes are completed by moving it into the when_resolved closure
-        unsafe {
-            tty.write(msg.as_bytes()).without_val()
-        }
-    })).when_resolved(move |_| drop(msg))
+        unsafe { tty.write(msg.as_bytes()).without_val() }
+    }))
+    .when_resolved(move |_| drop(msg))
 }
 
 #[macro_export]
@@ -69,5 +68,3 @@ macro_rules! log {
         ));
     }
 }
-
-

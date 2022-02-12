@@ -131,17 +131,19 @@ impl VirtualTerminalInternals {
             Some(AnsiParserAction::WriteChar(ch)) => {
                 self.write_char(ch);
             },
-            Some(AnsiParserAction::Sgr(sgr, sgr_len)) => for &sgr in sgr[0..sgr_len].iter() {
-                match sgr {
-                    AnsiParserSgrAction::Reset => {
-                        self.fg_color = vgabuf::Color::Black;
-                        self.bg_color = vgabuf::Color::White;
-                    },
-                    AnsiParserSgrAction::SetFgColor(color) => {
-                        self.fg_color = vgabuf::Color::from_ansi_color(color);
-                    },
-                    AnsiParserSgrAction::SetBgColor(color) => {
-                        self.bg_color = vgabuf::Color::from_ansi_color(color);
+            Some(AnsiParserAction::Sgr(sgr, sgr_len)) => {
+                for &sgr in sgr[0..sgr_len].iter() {
+                    match sgr {
+                        AnsiParserSgrAction::Reset => {
+                            self.fg_color = vgabuf::Color::Black;
+                            self.bg_color = vgabuf::Color::White;
+                        },
+                        AnsiParserSgrAction::SetFgColor(color) => {
+                            self.fg_color = vgabuf::Color::from_ansi_color(color);
+                        },
+                        AnsiParserSgrAction::SetBgColor(color) => {
+                            self.bg_color = vgabuf::Color::from_ansi_color(color);
+                        }
                     }
                 }
             },

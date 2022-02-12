@@ -17,7 +17,13 @@ impl GdtConst {
         let user_cs = gdt.add_entry(Descriptor::user_code_segment());
         let user_ds = gdt.add_entry(Descriptor::user_data_segment());
 
-        GdtConst { gdt, kernel_cs, kernel_ds, user_cs, user_ds }
+        GdtConst {
+            gdt,
+            kernel_cs,
+            kernel_ds,
+            user_cs,
+            user_ds
+        }
     }
 }
 
