@@ -446,6 +446,8 @@ impl Thread {
     ///
     /// This method does not run Drop implementations for any objects on the stack, so callers must be careful to ensure that there do not
     /// exist any resources on the stack that require explicit dropping when calling this method.
+    ///
+    /// This method will free stack memory, so references to stack objects must not persist past a call to this method.
     pub unsafe fn kill_current() -> ! {
         let thread = Thread::current();
         let process = thread.process().upgrade().unwrap();
