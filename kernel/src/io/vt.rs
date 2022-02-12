@@ -3,7 +3,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::iter::FromIterator;
 
-use crate::io::ansi::{AnsiParser, AnsiParserAction};
+use crate::io::ansi::{AnsiParser, AnsiParserAction, AnsiParserSgrAction};
 use crate::io::tty::Tty;
 use crate::sync::{Future, UninterruptibleSpinlock};
 use crate::x86_64::dev::vgabuf;
@@ -130,6 +130,20 @@ impl VirtualTerminalInternals {
         match self.ansi.write(b) {
             Some(AnsiParserAction::WriteChar(ch)) => {
                 self.write_char(ch);
+            },
+            Some(AnsiParserAction::Sgr(sgr, sgr_len)) => for &sgr in sgr[0..sgr_len].iter() {
+                match sgr {
+                    AnsiParserSgrAction::Reset => {
+                        self.fg_color = vgabuf::Color::Black;
+                        self.bg_color = vgabuf::Color::White;
+                    },
+                    AnsiParserSgrAction::SetFgColor(color) => {
+                        self.fg_color = vgabuf::Color::from_ansi_color(color);
+                    },
+                    AnsiParserSgrAction::SetBgColor(color) => {
+                        self.bg_color = vgabuf::Color::from_ansi_color(color);
+                    }
+                }
             },
             None => {}
         }

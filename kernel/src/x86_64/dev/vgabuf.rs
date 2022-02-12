@@ -1,6 +1,7 @@
 use core::fmt;
 
 use x86_64::instructions::port::Port;
+use crate::io::ansi::AnsiColor;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -21,6 +22,29 @@ pub enum Color {
     Pink = 0xd,
     Yellow = 0xe,
     White = 0xf
+}
+
+impl Color {
+    pub fn from_ansi_color(color: AnsiColor) -> Color {
+        match color {
+            AnsiColor::Black => Color::Black,
+            AnsiColor::Blue => Color::Blue,
+            AnsiColor::Green => Color::Green,
+            AnsiColor::Cyan => Color::Cyan,
+            AnsiColor::Red => Color::Red,
+            AnsiColor::Magenta => Color::Magenta,
+            AnsiColor::Brown => Color::Brown,
+            AnsiColor::LightGray => Color::LightGray,
+            AnsiColor::DarkGray => Color::DarkGray,
+            AnsiColor::LightBlue => Color::LightBlue,
+            AnsiColor::LightGreen => Color::LightGreen,
+            AnsiColor::LightCyan => Color::LightCyan,
+            AnsiColor::LightRed => Color::LightRed,
+            AnsiColor::Pink => Color::Pink,
+            AnsiColor::Yellow => Color::Yellow,
+            AnsiColor::White => Color::White
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
