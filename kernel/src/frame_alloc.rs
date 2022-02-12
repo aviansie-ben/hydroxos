@@ -193,15 +193,46 @@ pub fn get_allocator() -> &'static LockFrameAllocator<impl FrameAllocator> {
     &FRAME_ALLOC
 }
 
-pub unsafe fn init(boot_info: &BootInfo) {
+fn is_free(region_ty: MemoryRegionType) -> bool {
+    match region_ty {
+        MemoryRegionType::Usable => true,
+        MemoryRegionType::Bootloader => true,
+        _ => false
+    }
+}
+
+fn is_usable(region_ty: MemoryRegionType) -> bool {
+    match region_ty {
+        MemoryRegionType::Usable => true,
+        MemoryRegionType::InUse => true,
+        MemoryRegionType::AcpiReclaimable => true,
+        MemoryRegionType::Kernel => true,
+        MemoryRegionType::KernelStack => true,
+        MemoryRegionType::PageTable => true,
+        MemoryRegionType::Bootloader => true,
+        MemoryRegionType::BootInfo => true,
+        MemoryRegionType::Package => true,
+        _ => false
+    }
+}
+
+pub unsafe fn init(boot_info: &BootInfo) -> usize {
+    let mut num_frames = 0;
     let mut frame_alloc = get_allocator().lock();
+
     for region in boot_info.memory_map.iter() {
-        if region.region_type == MemoryRegionType::Usable {
+        if is_free(region.region_type) {
             for frame_n in region.range.start_frame_number..region.range.end_frame_number {
                 frame_alloc.free_one(x86_64::PhysAddr::new(frame_n * crate::x86_64::page::PAGE_SIZE as u64));
             };
         };
+
+        if is_usable(region.region_type) {
+            num_frames += region.range.end_frame_number - region.range.start_frame_number;
+        };
     };
+
+    num_frames.try_into().unwrap()
 }
 
 #[cfg(test)]
