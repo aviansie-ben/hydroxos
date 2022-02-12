@@ -23,7 +23,7 @@ struct FutureWaitGeneric {
     wait: ThreadWaitList
 }
 
-struct FutureWait<T> {
+pub struct FutureWait<T> {
     generic: UninterruptibleSpinlock<FutureWaitGeneric>,
     val: UnsafeCell<MaybeUninit<T>>
 }
@@ -457,13 +457,13 @@ impl<T> FutureWriter<T> {
         };
     }
 
-    fn into_raw(self) -> *const FutureWait<T> {
+    pub fn into_raw(self) -> *const FutureWait<T> {
         let wait = self.wait;
         mem::forget(self);
         wait
     }
 
-    fn from_raw(ptr: *const FutureWait<T>) -> FutureWriter<T> {
+    pub unsafe fn from_raw(ptr: *const FutureWait<T>) -> FutureWriter<T> {
         FutureWriter {
             wait: ptr,
             _data: PhantomData
@@ -596,10 +596,10 @@ mod test {
 
     #[test_case]
     fn test_without_val_when_resolved() {
-        let (mut future, future_with_val, writer) = {
+        let (mut future, writer) = {
             let (future, writer) = Future::new();
 
-            (future.without_val(), future, writer)
+            (future.without_val(), writer)
         };
 
         ACTION_RUN_FLAG.store(false, Ordering::Relaxed);

@@ -188,6 +188,8 @@ impl<'a> ProcessLock<'a> {
         assert!(!self.process.is_kernel_process());
 
         // TODO Actually allocate a user-mode stack
+        let _ = stack_size;
+
         Thread::create_internal(self, SavedRegisters::new_user_thread(f, arg, 0))
     }
 
