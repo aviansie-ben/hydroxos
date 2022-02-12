@@ -1,7 +1,7 @@
 use x86_64::PhysAddr;
 use x86_64::registers::control::Cr3;
 use x86_64::structures::paging::{FrameDeallocator, MappedPageTable, PageTable, PageTableFlags, PageTableIndex, PhysFrame, Size4KiB};
-use x86_64::structures::paging::mapper::{CleanUp, PageTableFrameMapping};
+use x86_64::structures::paging::mapper::PageTableFrameMapping;
 use x86_64::structures::paging::page_table::PageTableEntry;
 
 use crate::frame_alloc::FrameAllocator;
@@ -106,6 +106,10 @@ impl AddressSpace {
 }
 
 pub unsafe fn init_kernel_addrspace() {
+    if (init_kernel_addrspace as *const () as u64) < 0xffff000000000000 {
+        panic!("Kernel is loaded in lower-half?");
+    };
+
     let mut kernel_addrspace = (*KERNEL_ADDRESS_SPACE.get()).lock();
     assert_eq!(kernel_addrspace.0, PhysAddr::zero());
 
