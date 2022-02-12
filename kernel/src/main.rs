@@ -4,6 +4,8 @@
 #![reexport_test_harness_main = "test_harness_main"]
 #![test_runner(hydroxos_kernel::test_util::run_tests)]
 
+extern crate alloc;
+
 use core::panic::PanicInfo;
 
 use bootloader::{entry_point, BootInfo};
@@ -14,24 +16,28 @@ entry_point!(kernel_main);
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     use core::fmt::Write;
 
-    use hydroxos_kernel::{early_alloc, frame_alloc, io, sched, x86_64};
+    use hydroxos_kernel::{early_alloc, frame_alloc, io, log, sched, x86_64};
+    use hydroxos_kernel::frame_alloc::FrameAllocator;
 
     unsafe {
         early_alloc::init();
         x86_64::init_phase_1(boot_info);
-        frame_alloc::init(boot_info);
+
+        let num_frames = frame_alloc::init(boot_info);
+
+        log::init(io::vt::get_terminal(0).unwrap());
+
+        log!(Info, "kernel", "Booting HydroxOS v{}", env!("CARGO_PKG_VERSION"));
+        log!(Debug, "kernel", "Detected {} MiB memory, {} MiB free",
+            num_frames * x86_64::page::PAGE_SIZE / (1024 * 1024),
+            frame_alloc::get_allocator().num_frames_available() * x86_64::page::PAGE_SIZE / (1024 * 1024));
+
         x86_64::init_phase_2(boot_info);
 
         sched::init();
     };
 
-    writeln!(
-        io::tty::TtyWriter::new(io::vt::get_terminal(0).unwrap().as_ref()),
-        "{:#?} {:?}",
-        boot_info,
-        boot_info as *const BootInfo
-    )
-    .unwrap();
+    log!(Info, "kernel", "Done booting");
 
     loop {
         ::x86_64::instructions::hlt();

@@ -18,6 +18,9 @@
 
 extern crate alloc;
 
+// Declared first so we can use the log! macro in all other modules
+pub mod log;
+
 pub mod early_alloc;
 pub mod frame_alloc;
 pub mod io;
