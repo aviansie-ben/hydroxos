@@ -1,3 +1,5 @@
+use core::ptr;
+
 use x86_64::registers::control::Cr3;
 use x86_64::structures::paging::mapper::PageTableFrameMapping;
 use x86_64::structures::paging::page_table::PageTableEntry;
@@ -130,7 +132,10 @@ pub unsafe fn init_kernel_addrspace() {
         for i in 256..512 {
             let i = PageTableIndex::new(i);
             if kl4_table.level_4_table()[i].is_unused() {
-                kl4_table.level_4_table()[i].set_addr(frame_alloc.alloc_one().unwrap(), PageTableFlags::PRESENT | PageTableFlags::WRITABLE);
+                let kl3_table = frame_alloc.alloc_one().unwrap();
+                ptr::write_bytes(get_phys_mem_ptr_mut(kl3_table) as *mut u8, 0, PAGE_SIZE);
+
+                kl4_table.level_4_table()[i].set_addr(kl3_table, PageTableFlags::PRESENT | PageTableFlags::WRITABLE);
             };
         }
 
