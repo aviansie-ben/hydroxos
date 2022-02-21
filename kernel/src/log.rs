@@ -58,10 +58,10 @@ pub fn log_msg(msg: String) {
 #[macro_export]
 macro_rules! log {
     ($lvl:ident, $module:expr, $msg:expr $(, $($arg:expr),*)?) => {
-        let lvl = ::hydroxos_kernel::log::LogLevel::$lvl;
-        ::hydroxos_kernel::log::log_msg(::alloc::format!(
+        let lvl = $crate::log::LogLevel::$lvl;
+        $crate::log::log_msg(::alloc::format!(
             concat!("[\x1b[{}m{}\x1b[97m] {}: ", $msg, "\n"),
-            ::hydroxos_kernel::io::ansi::AnsiParserSgrAction::SetFgColor(lvl.color()),
+            $crate::io::ansi::AnsiParserSgrAction::SetFgColor(lvl.color()),
             lvl.name(),
             $module,
             $($($arg),*)?
