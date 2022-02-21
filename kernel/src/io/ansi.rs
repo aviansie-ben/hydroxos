@@ -8,7 +8,7 @@ enum AnsiParserState {
     PartialCsi(usize)
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnsiColor {
     Black,
     Red,

@@ -41,6 +41,10 @@ pub fn get_phys_mem_ptr_mut<T>(phys_addr: PhysAddr) -> *mut T {
     get_phys_mem_ptr::<T>(phys_addr) as *mut T
 }
 
+pub unsafe fn get_phys_mem_addr<T>(ptr: *const T) -> PhysAddr {
+    PhysAddr::new((ptr as *mut u8).offset_from(get_phys_mem_base()) as u64)
+}
+
 struct PhysPageTableFrameMapping;
 
 unsafe impl PageTableFrameMapping for PhysPageTableFrameMapping {

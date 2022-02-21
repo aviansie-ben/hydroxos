@@ -14,8 +14,8 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use super::wait::{ThreadWaitList, ThreadWaitState};
 use crate::sync::uninterruptible::{InterruptDisabler, UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
 use crate::util::{PinWeak, SharedUnsafeCell};
-use crate::x86_64::idt::InterruptFrame;
-use crate::x86_64::regs::SavedRegisters;
+use crate::arch::interrupt::InterruptFrame;
+use crate::arch::regs::SavedRegisters;
 
 static NEXT_PID: AtomicU64 = AtomicU64::new(0);
 
@@ -622,7 +622,7 @@ impl<'a> ThreadLock<'a> {
         regs.ext.restore();
 
         if self.thread().process().upgrade().unwrap().is_kernel_process() {
-            interrupt_frame.fsbase = x86_64::registers::model_specific::Msr::new(0xc0000100).read();
+            interrupt_frame.setup_kernel_mode_thread_locals();
         }
     }
 

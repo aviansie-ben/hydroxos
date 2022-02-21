@@ -6,9 +6,10 @@ use bootloader::bootinfo::MemoryRegionType;
 use bootloader::BootInfo;
 
 use crate::sync::uninterruptible::{UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
-use crate::x86_64::page::get_phys_mem_base;
+use crate::arch::PhysAddr;
+use crate::arch::page::{get_phys_mem_ptr_mut, get_phys_mem_addr, PAGE_SIZE};
 
-const NUM_FRAMES_PER_PAGE: usize = crate::x86_64::page::PAGE_SIZE / core::mem::size_of::<x86_64::PhysAddr>();
+const NUM_FRAMES_PER_PAGE: usize = PAGE_SIZE / core::mem::size_of::<PhysAddr>();
 
 /// An allocator that returns physical page frames.
 pub trait FrameAllocator {
@@ -19,7 +20,7 @@ pub trait FrameAllocator {
     /// This method assumes that the provided page frame is valid (i.e. it points at memory that's usable as general-purpose RAM) and that
     /// it is no longer in use by anything else. Providing valid memory is required, even if callers to [`FrameAllocator::alloc_one`] don't
     /// require this, as the frame allocator is free to use this memory internally as scratch memory.
-    unsafe fn free_one(&mut self, frame: x86_64::PhysAddr);
+    unsafe fn free_one(&mut self, frame: PhysAddr);
 
     /// Allocates a single page frame from this allocator. Returns [`None`] if no page frames are available.
     ///
@@ -28,7 +29,7 @@ pub trait FrameAllocator {
     /// Unless the particular allocator in use makes claims otherwise, page frames received from this API may contain sensitive information
     /// that was left in memory when the page frame was freed. Before making any memory allocated from here visible to user-space code, it
     /// should be initialized to a known pattern to avoid leaking information to untrusted code.
-    fn alloc_one(&mut self) -> Option<x86_64::PhysAddr>;
+    fn alloc_one(&mut self) -> Option<PhysAddr>;
 
     /// Gets the total number of page frames available from this allocator.
     fn num_frames_available(&self) -> usize;
@@ -39,7 +40,7 @@ pub trait FrameAllocator {
     ///
     /// This method assumes that all provided page frames are valid (i.e. they point at memory that's usable as general-purpose RAM), that
     /// they are no longer in use by anything else, and that the list of page frames to free does not contain duplicate entries.
-    unsafe fn free_many(&mut self, frames: &[x86_64::PhysAddr]) {
+    unsafe fn free_many(&mut self, frames: &[PhysAddr]) {
         for &frame in frames.iter() {
             self.free_one(frame);
         }
@@ -54,7 +55,7 @@ pub trait FrameAllocator {
     /// # Safety
     ///
     /// This method has the same guarantees with regards to memory initialization as [`FrameAllocator::alloc_one`].
-    fn alloc_many<'a>(&mut self, frames_out: &'a mut [MaybeUninit<x86_64::PhysAddr>]) -> Option<&'a mut [x86_64::PhysAddr]> {
+    fn alloc_many<'a>(&mut self, frames_out: &'a mut [MaybeUninit<PhysAddr>]) -> Option<&'a mut [PhysAddr]> {
         if self.num_frames_available() < frames_out.len() {
             return None;
         }
@@ -63,13 +64,13 @@ pub trait FrameAllocator {
             unsafe { *frame_out.as_mut_ptr() = self.alloc_one().unwrap() }
         }
 
-        Some(unsafe { &mut *(frames_out as *mut [MaybeUninit<x86_64::PhysAddr>] as *mut [x86_64::PhysAddr]) })
+        Some(unsafe { &mut *(frames_out as *mut [MaybeUninit<PhysAddr>] as *mut [PhysAddr]) })
     }
 }
 
 #[repr(C)]
 struct StackFrameAllocatorPage {
-    frames: [x86_64::PhysAddr; NUM_FRAMES_PER_PAGE]
+    frames: [PhysAddr; NUM_FRAMES_PER_PAGE]
 }
 
 /// A page frame allocator that maintains an internal stack of free frames.
@@ -101,17 +102,17 @@ impl StackFrameAllocator {
 }
 
 impl FrameAllocator for StackFrameAllocator {
-    unsafe fn free_one(&mut self, frame: x86_64::PhysAddr) {
+    unsafe fn free_one(&mut self, frame: PhysAddr) {
         if self.num_frames_available == 0 {
-            self.stack_top = get_phys_mem_base().offset(frame.as_u64() as isize) as *mut StackFrameAllocatorPage;
-            (*self.stack_top).frames[0] = x86_64::PhysAddr::zero();
+            self.stack_top = get_phys_mem_ptr_mut(frame) as *mut StackFrameAllocatorPage;
+            (*self.stack_top).frames[0] = PhysAddr::zero();
         } else {
             let i = self.frames_on_top_stack_frame();
 
             if i == NUM_FRAMES_PER_PAGE {
-                let new_stack_top = get_phys_mem_base().offset(frame.as_u64() as isize) as *mut StackFrameAllocatorPage;
+                let new_stack_top = get_phys_mem_ptr_mut(frame) as *mut StackFrameAllocatorPage;
 
-                (*new_stack_top).frames[0] = x86_64::PhysAddr::new((self.stack_top as *mut u8).offset_from(get_phys_mem_base()) as u64);
+                (*new_stack_top).frames[0] = get_phys_mem_addr(self.stack_top);
                 self.stack_top = new_stack_top;
             } else {
                 (*self.stack_top).frames[i] = frame;
@@ -121,7 +122,7 @@ impl FrameAllocator for StackFrameAllocator {
         self.num_frames_available += 1;
     }
 
-    fn alloc_one(&mut self) -> Option<x86_64::PhysAddr> {
+    fn alloc_one(&mut self) -> Option<PhysAddr> {
         unsafe {
             if self.num_frames_available == 0 {
                 None
@@ -133,9 +134,9 @@ impl FrameAllocator for StackFrameAllocator {
                     self.stack_top = if self.num_frames_available == 1 {
                         core::ptr::null_mut()
                     } else {
-                        get_phys_mem_base().offset((*self.stack_top).frames[0].as_u64() as isize) as *mut StackFrameAllocatorPage
+                        get_phys_mem_ptr_mut((*self.stack_top).frames[0])
                     };
-                    x86_64::PhysAddr::new((old_stack_top as *mut u8).offset_from(get_phys_mem_base()) as u64)
+                    get_phys_mem_addr(old_stack_top)
                 } else {
                     (*self.stack_top).frames[i - 1]
                 };
@@ -166,11 +167,11 @@ impl<T: FrameAllocator> LockFrameAllocator<T> {
 }
 
 impl<T: FrameAllocator> FrameAllocator for &'_ LockFrameAllocator<T> {
-    unsafe fn free_one(&mut self, frame: x86_64::PhysAddr) {
+    unsafe fn free_one(&mut self, frame: PhysAddr) {
         self.lock().free_one(frame);
     }
 
-    fn alloc_one(&mut self) -> Option<x86_64::PhysAddr> {
+    fn alloc_one(&mut self) -> Option<PhysAddr> {
         self.lock().alloc_one()
     }
 
@@ -178,11 +179,11 @@ impl<T: FrameAllocator> FrameAllocator for &'_ LockFrameAllocator<T> {
         self.lock().num_frames_available()
     }
 
-    unsafe fn free_many(&mut self, frames: &[x86_64::PhysAddr]) {
+    unsafe fn free_many(&mut self, frames: &[PhysAddr]) {
         self.lock().free_many(frames)
     }
 
-    fn alloc_many<'a>(&mut self, frames_out: &'a mut [MaybeUninit<x86_64::PhysAddr>]) -> Option<&'a mut [x86_64::PhysAddr]> {
+    fn alloc_many<'a>(&mut self, frames_out: &'a mut [MaybeUninit<PhysAddr>]) -> Option<&'a mut [PhysAddr]> {
         self.lock().alloc_many(frames_out)
     }
 }
@@ -223,7 +224,7 @@ pub(crate) unsafe fn init(boot_info: &BootInfo) -> usize {
     for region in boot_info.memory_map.iter() {
         if is_free(region.region_type) {
             for frame_n in region.range.start_frame_number..region.range.end_frame_number {
-                frame_alloc.free_one(x86_64::PhysAddr::new(frame_n * crate::x86_64::page::PAGE_SIZE as u64));
+                frame_alloc.free_one(PhysAddr::new(frame_n * PAGE_SIZE as u64));
             }
         };
 
@@ -239,24 +240,33 @@ pub(crate) unsafe fn init(boot_info: &BootInfo) -> usize {
 mod tests {
     use core::mem::MaybeUninit;
 
-    use x86_64::structures::paging::mapper::{OffsetPageTable, Translate, TranslateResult};
-    use x86_64::{PhysAddr, VirtAddr};
-
     use super::{FrameAllocator, StackFrameAllocator, NUM_FRAMES_PER_PAGE};
     use crate::util::PageAligned;
-    use crate::x86_64::page::{get_phys_mem_base, get_phys_mem_ptr_mut};
+    use crate::arch::PhysAddr;
+    use crate::arch::page::PAGE_SIZE;
 
-    static TEST_AREA: PageAligned<[[u8; crate::x86_64::page::PAGE_SIZE]; 10]> = PageAligned::new([[0; crate::x86_64::page::PAGE_SIZE]; 10]);
+    static TEST_AREA: PageAligned<[[u8; PAGE_SIZE]; 10]> = PageAligned::new([[0; PAGE_SIZE]; 10]);
 
+    #[cfg(not(feature = "check_arch_api"))]
     unsafe fn get_test_page(idx: usize) -> PhysAddr {
+        use x86_64::structures::paging::mapper::{OffsetPageTable, Translate, TranslateResult};
+        use x86_64::VirtAddr;
+
+        use crate::arch::x86_64::page::{get_phys_mem_base, get_phys_mem_ptr_mut};
+
         let addr = get_phys_mem_ptr_mut(x86_64::registers::control::Cr3::read().0.start_address());
         let table = OffsetPageTable::new(&mut *addr, VirtAddr::new(get_phys_mem_base() as u64));
 
         match table.translate(VirtAddr::new(TEST_AREA[idx].as_ptr() as u64)) {
-            TranslateResult::Mapped { frame, offset, flags: _ } => frame.start_address() + offset,
+            TranslateResult::Mapped { frame, offset, flags: _ } => PhysAddr::new((frame.start_address() + offset).as_u64()),
             TranslateResult::NotMapped => unreachable!(),
             TranslateResult::InvalidFrameAddress(_) => unreachable!()
         }
+    }
+
+    #[cfg(feature = "check_arch_api")]
+    unsafe fn get_test_page(_idx: usize) -> PhysAddr {
+        unimplemented!()
     }
 
     #[test_case]

@@ -1,9 +1,11 @@
-use core::fmt::Write;
 use core::panic::PanicInfo;
 
-use crate::x86_64::dev::vgabuf::{Color, TextBuffer, Writer};
-
+#[cfg(not(feature = "check_arch_api"))]
 pub fn show_panic_crash_screen(info: &PanicInfo) -> ! {
+    use core::fmt::Write;
+
+    use crate::arch::x86_64::dev::vgabuf::{Color, TextBuffer, Writer};
+
     let mut vga_buf = unsafe { TextBuffer::new(0xb8000 as *mut u8, 80, 25) };
     let mut w = Writer::new(&mut vga_buf);
 
@@ -15,6 +17,11 @@ pub fn show_panic_crash_screen(info: &PanicInfo) -> ! {
     loop {
         ::x86_64::instructions::hlt();
     }
+}
+
+#[cfg(feature = "check_arch_api")]
+pub fn show_panic_crash_screen(_info: &PanicInfo) -> ! {
+    crate::arch::halt()
 }
 
 #[alloc_error_handler]

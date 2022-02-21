@@ -3,16 +3,18 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::iter::FromIterator;
 
-use crate::io::ansi::{AnsiParser, AnsiParserAction, AnsiParserSgrAction};
+use crate::io::ansi::{AnsiColor, AnsiParser, AnsiParserAction, AnsiParserSgrAction};
 use crate::io::tty::Tty;
 use crate::sync::{Future, UninterruptibleSpinlock};
-use crate::x86_64::dev::vgabuf;
+
+#[cfg(not(feature = "check_arch_api"))]
+use crate::arch::x86_64::dev::vgabuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct VTChar {
     ch: char,
-    fg_color: vgabuf::Color,
-    bg_color: vgabuf::Color
+    fg_color: AnsiColor,
+    bg_color: AnsiColor
 }
 
 #[derive(Debug)]
@@ -22,8 +24,9 @@ struct VirtualTerminalInternals {
     size: (usize, usize),
     ansi: AnsiParser,
     cursor_pos: (usize, usize),
-    fg_color: vgabuf::Color,
-    bg_color: vgabuf::Color,
+    fg_color: AnsiColor,
+    bg_color: AnsiColor,
+    #[allow(unused)]
     cursor_hidden: bool,
     id: usize
 }
@@ -135,14 +138,14 @@ impl VirtualTerminalInternals {
                 for &sgr in sgr[0..sgr_len].iter() {
                     match sgr {
                         AnsiParserSgrAction::Reset => {
-                            self.fg_color = vgabuf::Color::Black;
-                            self.bg_color = vgabuf::Color::White;
+                            self.fg_color = AnsiColor::Black;
+                            self.bg_color = AnsiColor::White;
                         },
                         AnsiParserSgrAction::SetFgColor(color) => {
-                            self.fg_color = vgabuf::Color::from_ansi_color(color);
+                            self.fg_color = color;
                         },
                         AnsiParserSgrAction::SetBgColor(color) => {
-                            self.bg_color = vgabuf::Color::from_ansi_color(color);
+                            self.bg_color = color;
                         }
                     }
                 }
@@ -196,8 +199,8 @@ impl VirtualTerminal {
             buf: Vec::from_iter(itertools::repeat_n(
                 VTChar {
                     ch: ' ',
-                    fg_color: vgabuf::Color::White,
-                    bg_color: vgabuf::Color::Black
+                    fg_color: AnsiColor::White,
+                    bg_color: AnsiColor::Black
                 },
                 width * height
             ))
@@ -206,8 +209,8 @@ impl VirtualTerminal {
             size: (width, height),
             ansi: AnsiParser::new(),
             cursor_pos: (0, 0),
-            fg_color: vgabuf::Color::White,
-            bg_color: vgabuf::Color::Black,
+            fg_color: AnsiColor::White,
+            bg_color: AnsiColor::Black,
             cursor_hidden: false,
             id
         }))
@@ -215,26 +218,30 @@ impl VirtualTerminal {
 }
 
 pub enum VirtualTerminalDisplay {
+    #[cfg(not(feature = "check_arch_api"))]
     VgaText(vgabuf::TextBuffer)
 }
 
 impl VirtualTerminalDisplay {
     pub fn size(&self) -> (usize, usize) {
         match *self {
+            #[cfg(not(feature = "check_arch_api"))]
             VirtualTerminalDisplay::VgaText(ref buf) => buf.size()
         }
     }
 
     pub fn clear(&mut self) {
         match *self {
+            #[cfg(not(feature = "check_arch_api"))]
             VirtualTerminalDisplay::VgaText(ref mut buf) => {
                 buf.clear(vgabuf::Color::White, vgabuf::Color::Black);
             }
         };
     }
 
-    fn redraw(&mut self, term: &VirtualTerminalInternals) {
+    fn redraw(&mut self, #[allow(unused)] term: &VirtualTerminalInternals) {
         match *self {
+            #[cfg(not(feature = "check_arch_api"))]
             VirtualTerminalDisplay::VgaText(ref mut buf) => {
                 for y in 0..term.size.1.min(buf.size().1) {
                     for x in 0..term.size.0.min(buf.size().0) {
@@ -245,7 +252,7 @@ impl VirtualTerminalDisplay {
                             b'\xfe'
                         };
 
-                        buf.set(x, y, ch, fg_color, bg_color);
+                        buf.set(x, y, ch, vgabuf::Color::from_ansi_color(fg_color), vgabuf::Color::from_ansi_color(bg_color));
                     }
                 }
 

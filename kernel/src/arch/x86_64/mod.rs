@@ -2,7 +2,7 @@ use core::arch::asm;
 use core::ptr;
 
 use bootloader::BootInfo;
-use x86_64::PhysAddr;
+pub use x86_64::PhysAddr;
 
 use crate::io::vt::VirtualTerminalDisplay;
 use crate::util::SharedUnsafeCell;
@@ -10,7 +10,7 @@ use crate::util::SharedUnsafeCell;
 pub mod cpuid;
 pub mod dev;
 pub mod gdt;
-pub mod idt;
+pub mod interrupt;
 pub mod page;
 pub mod pic;
 pub mod regs;
@@ -56,8 +56,8 @@ pub(crate) unsafe fn init_phase_1(boot_info: &BootInfo) {
     crate::io::vt::init(create_primary_display(), 1);
 
     gdt::init();
-    idt::init_bsp();
-    pic::remap_pic(idt::IRQS_START, idt::IRQS_START + 0x8);
+    interrupt::init_bsp();
+    pic::remap_pic(interrupt::IRQS_START, interrupt::IRQS_START + 0x8);
     pic::mask_all_irqs();
     interrupts::enable();
 
@@ -70,7 +70,7 @@ pub(crate) unsafe fn init_phase_2() {
 }
 
 #[naked]
-pub(crate) unsafe extern "C" fn idle() {
+unsafe extern "C" fn idle() {
     asm!(
         "sti",
         "hlt",
@@ -78,4 +78,10 @@ pub(crate) unsafe extern "C" fn idle() {
         sym idle,
         options(noreturn)
     );
+}
+
+pub fn halt() -> ! {
+    loop {
+        ::x86_64::instructions::hlt();
+    }
 }

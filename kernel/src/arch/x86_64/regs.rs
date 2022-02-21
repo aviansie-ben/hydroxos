@@ -33,6 +33,7 @@ pub enum GeneralRegister {
     R15
 }
 
+#[derive(Debug, Clone)]
 pub struct SavedBasicRegisters {
     pub rip: u64,
     pub rflags: u64,
@@ -338,7 +339,7 @@ impl SavedRegisters {
 pub(super) unsafe fn init_xsave() {
     use x86_64::registers::control::{Cr4, Cr4Flags};
 
-    use crate::x86_64::cpuid::{self, CpuFeature};
+    use super::cpuid::{self, CpuFeature};
 
     if cpuid::get_minimum_features().supports(CpuFeature::XSAVE) {
         Cr4::write(Cr4::read() | Cr4Flags::OSXSAVE);

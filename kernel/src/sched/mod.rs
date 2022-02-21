@@ -6,7 +6,7 @@
 use core::cell::UnsafeCell;
 use core::mem;
 
-use crate::x86_64::idt::InterruptFrame;
+use crate::arch::interrupt::InterruptFrame;
 
 pub mod task;
 pub mod wait;
@@ -30,6 +30,7 @@ static IN_INTERRUPT: UnsafeCell<bool> = UnsafeCell::new(false);
 /// This method must be called by the architecture's interrupt handling infrastructure before beginning to service an asynchronous hardware
 /// interrupt. Failing to call this method or calling it when an asynchronous hardware interrupt is not about to be handled produces
 /// undefined behaviour.
+#[allow(unused)]
 pub(crate) unsafe fn begin_interrupt() {
     *IN_INTERRUPT.get() = true;
 }
@@ -41,6 +42,7 @@ pub(crate) unsafe fn begin_interrupt() {
 /// This method must be called by the architecture's interrupt handling infrastructure after completing the handler for an asynchronous
 /// hardware interrupt. Failing to call this method or calling it when an asynchronous hardware interrupt is not about to be completed
 /// produces undefined behaviour.
+#[allow(unused)]
 pub(crate) unsafe fn end_interrupt() {
     *IN_INTERRUPT.get() = false;
 }
@@ -90,8 +92,7 @@ pub unsafe fn perform_context_switch_interrupt(old_thread_lock: Option<task::Thr
         *thread.state_mut() = task::ThreadState::Running;
         thread.restore_cpu_state(interrupt_frame);
     } else {
-        // TODO Handle switch out of user-mode
-        interrupt_frame.rip = crate::x86_64::idle as u64;
+        interrupt_frame.set_to_idle();
     }
 
     *task::CURRENT_THREAD.get() = thread;

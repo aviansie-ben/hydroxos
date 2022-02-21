@@ -21,6 +21,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a62c8f6168cd106687ee36a2b71a46c4144d73399f72814104d33094b8092fd2"
 
 [[package]]
+name = "cfg-if"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
+
+[[package]]
 name = "either"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -31,6 +37,7 @@ name = "hydroxos_kernel"
 version = "0.1.0"
 dependencies = [
  "bootloader",
+ "cfg-if",
  "itertools",
  "spin",
  "uart_16550",

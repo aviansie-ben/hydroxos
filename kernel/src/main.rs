@@ -22,10 +22,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     };
 
     log!(Info, "kernel", "Done booting");
-
-    loop {
-        ::x86_64::instructions::hlt();
-    }
+    hydroxos_kernel::arch::halt();
 }
 
 #[cfg(test)]

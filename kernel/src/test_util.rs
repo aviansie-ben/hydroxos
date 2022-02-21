@@ -43,10 +43,16 @@ pub fn skip(reason: &str) {
     IS_SKIPPED.store(true, Ordering::Relaxed);
 }
 
+#[cfg(not(feature = "check_arch_api"))]
 pub fn exit(code: u32) -> ! {
-    use crate::x86_64::dev::qemu_dbg_exit::QemuExitDevice;
+    use crate::arch::x86_64::dev::qemu_dbg_exit::QemuExitDevice;
 
     unsafe { QemuExitDevice::new(0xf4).exit(code) }
+}
+
+#[cfg(feature = "check_arch_api")]
+pub fn exit(_code: u32) -> ! {
+    crate::arch::halt();
 }
 
 pub fn handle_test_panic(info: &PanicInfo) -> ! {

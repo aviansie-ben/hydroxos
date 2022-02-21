@@ -17,7 +17,7 @@ macro_rules! handler_with_code {
                     "push {}",
                     "jmp {}",
                     const $n,
-                    sym crate::x86_64::idt::begin_interrupt_common,
+                    sym begin_interrupt_common,
                     options(noreturn)
                 );
             };
@@ -35,7 +35,7 @@ macro_rules! handler_without_code {
                     "push {}",
                     "jmp {}",
                     const $n,
-                    sym crate::x86_64::idt::begin_interrupt_common,
+                    sym begin_interrupt_common,
                     options(noreturn)
                 );
             }
@@ -223,6 +223,7 @@ handler_without_code!(begin_int30, 0x30);
 handler_without_code!(begin_int80, 0x80);
 
 #[repr(C)]
+#[derive(Debug, Clone)]
 pub struct InterruptFrame {
     pub gsbase: u64,
     pub fsbase: u64,
@@ -311,6 +312,15 @@ impl InterruptFrame {
         self.gs = saved.gs as u64;
         self.fsbase = saved.fsbase;
         self.gsbase = saved.gsbase;
+    }
+
+    pub fn set_to_idle(&mut self) {
+        // TODO Handle switch out of user-mode
+        self.rip = super::idle as u64;
+    }
+
+    pub fn setup_kernel_mode_thread_locals(&mut self) {
+        self.fsbase = unsafe { x86_64::registers::model_specific::Msr::new(0xc0000100).read() };
     }
 }
 

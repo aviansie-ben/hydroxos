@@ -27,6 +27,7 @@ use bootloader::BootInfo;
 // Declared first so we can use the log! macro in all other modules
 pub mod log;
 
+pub mod arch;
 pub mod early_alloc;
 pub mod frame_alloc;
 pub mod io;
@@ -35,13 +36,13 @@ pub mod sched;
 pub mod sync;
 pub mod test_util;
 pub mod util;
-pub mod x86_64;
 
 pub unsafe fn init_phase_1(boot_info: &'static BootInfo) {
+    use crate::arch::page::PAGE_SIZE;
     use crate::frame_alloc::FrameAllocator;
 
     early_alloc::init();
-    x86_64::init_phase_1(boot_info);
+    arch::init_phase_1(boot_info);
 
     let num_frames = frame_alloc::init(boot_info);
 
@@ -52,13 +53,13 @@ pub unsafe fn init_phase_1(boot_info: &'static BootInfo) {
         Debug,
         "kernel",
         "Detected {} MiB memory, {} MiB free",
-        num_frames * x86_64::page::PAGE_SIZE / (1024 * 1024),
-        frame_alloc::get_allocator().num_frames_available() * x86_64::page::PAGE_SIZE / (1024 * 1024)
+        num_frames * PAGE_SIZE / (1024 * 1024),
+        frame_alloc::get_allocator().num_frames_available() * PAGE_SIZE / (1024 * 1024)
     );
 }
 
 pub unsafe fn init_phase_2() {
-    x86_64::init_phase_2();
+    arch::init_phase_2();
     sched::init();
 }
 
@@ -76,9 +77,7 @@ mod test {
             crate::init_phase_2();
         };
         crate::test_harness_main();
-        loop {
-            ::x86_64::instructions::hlt();
-        }
+        crate::arch::halt();
     }
 
     #[panic_handler]
