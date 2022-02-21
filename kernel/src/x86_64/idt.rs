@@ -417,7 +417,7 @@ impl InterruptTable {
 
 static IDT: SharedUnsafeCell<InterruptTable> = SharedUnsafeCell::new(InterruptTable::new());
 
-pub unsafe fn init_bsp() {
+pub(super) unsafe fn init_bsp() {
     let idt = IDT.get().as_mut().unwrap();
     let handlers = [
         begin_isr0,

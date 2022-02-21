@@ -104,7 +104,7 @@ impl AddressSpace {
     }
 }
 
-pub unsafe fn init_kernel_addrspace() {
+pub(super) unsafe fn init_kernel_addrspace() {
     if (init_kernel_addrspace as *const () as u64) < 0xffff000000000000 {
         panic!("Kernel is loaded in lower-half?");
     };

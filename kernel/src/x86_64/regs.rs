@@ -335,7 +335,7 @@ impl SavedRegisters {
     }
 }
 
-pub unsafe fn init_xsave() {
+pub(super) unsafe fn init_xsave() {
     use x86_64::registers::control::{Cr4, Cr4Flags};
 
     use crate::x86_64::cpuid::{self, CpuFeature};

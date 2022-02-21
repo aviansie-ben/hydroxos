@@ -17,7 +17,7 @@ pub mod regs;
 
 static KERNEL_FS_BASE: SharedUnsafeCell<u64> = SharedUnsafeCell::new(0);
 
-pub unsafe fn create_primary_display(_: &'static BootInfo) -> VirtualTerminalDisplay {
+unsafe fn create_primary_display() -> VirtualTerminalDisplay {
     use self::dev::vgabuf::TextBuffer;
 
     VirtualTerminalDisplay::VgaText(TextBuffer::new(page::get_phys_mem_ptr_mut(PhysAddr::new(0xb8000)), 80, 25))
@@ -31,7 +31,7 @@ unsafe fn init_sse() {
     asm!("fninit");
 }
 
-unsafe fn init_bootstrap_tls(boot_info: &'static BootInfo) {
+unsafe fn init_bootstrap_tls(boot_info: &BootInfo) {
     if let Some(tls_template) = boot_info.tls_template() {
         assert!(tls_template.file_size <= tls_template.mem_size);
 
@@ -46,14 +46,14 @@ unsafe fn init_bootstrap_tls(boot_info: &'static BootInfo) {
     };
 }
 
-pub unsafe fn init_phase_1(boot_info: &'static BootInfo) {
+pub(crate) unsafe fn init_phase_1(boot_info: &BootInfo) {
     use x86_64::instructions::interrupts;
 
     page::init_phys_mem_base(boot_info.physical_memory_offset as *mut u8);
     init_bootstrap_tls(boot_info);
     cpuid::init_bsp();
 
-    crate::io::vt::init(create_primary_display(boot_info), 1);
+    crate::io::vt::init(create_primary_display(), 1);
 
     gdt::init();
     idt::init_bsp();
@@ -65,7 +65,7 @@ pub unsafe fn init_phase_1(boot_info: &'static BootInfo) {
     regs::init_xsave();
 }
 
-pub unsafe fn init_phase_2(_boot_info: &'static BootInfo) {
+pub(crate) unsafe fn init_phase_2() {
     page::init_kernel_addrspace();
 }
 

@@ -5,7 +5,7 @@ const MASTER_PIC_DATA_PORT: u16 = 0x21;
 const SLAVE_PIC_COMMAND_PORT: u16 = 0xA0;
 const SLAVE_PIC_DATA_PORT: u16 = 0xA1;
 
-pub unsafe fn remap_pic(master_off: u8, slave_off: u8) {
+pub(super) unsafe fn remap_pic(master_off: u8, slave_off: u8) {
     // All writes to PIC ports need to be followed by a wait for I/O to complete. This is done by writing garbage to port 0x80, which is
     // typically unused.
     let mut io_wait_port: Port<u8> = Port::new(0x80);

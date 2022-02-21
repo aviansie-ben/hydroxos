@@ -61,7 +61,7 @@ impl CpuFeatureSet {
 
 static MIN_FEATURES: SharedUnsafeCell<CpuFeatureSet> = SharedUnsafeCell::new(CpuFeatureSet::empty());
 
-pub unsafe fn init_bsp() {
+pub(super) unsafe fn init_bsp() {
     *MIN_FEATURES.get() = CpuFeatureSet::detect();
 }
 

@@ -216,7 +216,7 @@ fn is_usable(region_ty: MemoryRegionType) -> bool {
     }
 }
 
-pub unsafe fn init(boot_info: &BootInfo) -> usize {
+pub(crate) unsafe fn init(boot_info: &BootInfo) -> usize {
     let mut num_frames = 0;
     let mut frame_alloc = get_allocator().lock();
 
