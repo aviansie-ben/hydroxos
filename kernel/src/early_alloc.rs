@@ -4,7 +4,7 @@ use core::sync::atomic::{AtomicPtr, Ordering};
 
 use crate::util::{PageAligned, SharedUnsafeCell};
 
-const EARLY_ALLOC_SIZE: usize = 1 * 1024 * 1024;
+const EARLY_ALLOC_SIZE: usize = 1024 * 1024;
 
 static EARLY_ALLOC_AREA: PageAligned<SharedUnsafeCell<[u8; EARLY_ALLOC_SIZE]>> =
     PageAligned::new(SharedUnsafeCell::new([0; EARLY_ALLOC_SIZE]));
@@ -47,7 +47,7 @@ pub fn alloc(size: usize, align: usize) -> *mut u8 {
                 .compare_exchange(mark, mark.offset(alloc_size), Ordering::Relaxed, Ordering::Relaxed)
                 .is_ok()
             {
-                break mark.offset(align_offset as isize);
+                break mark.add(align_offset);
             };
         }
     }

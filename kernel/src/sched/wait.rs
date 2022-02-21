@@ -257,10 +257,10 @@ mod test {
 
         Thread::yield_current();
         Thread::yield_current();
-        assert_eq!(false, flag.load(Ordering::Relaxed));
+        assert!(!flag.load(Ordering::Relaxed));
         waitlist.wake_one();
         Thread::yield_current();
-        assert_eq!(true, flag.load(Ordering::Relaxed));
+        assert!(flag.load(Ordering::Relaxed));
         assert!(matches!(*thread.lock().state(), ThreadState::Dead));
     }
 

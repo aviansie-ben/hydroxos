@@ -52,6 +52,7 @@ pub fn is_handling_interrupt() -> bool {
     unsafe { *IN_INTERRUPT.get() }
 }
 
+#[allow(clippy::fn_to_numeric_cast)]
 pub unsafe fn perform_context_switch_interrupt(old_thread_lock: Option<task::ThreadLock>, interrupt_frame: &mut InterruptFrame) {
     assert!(is_handling_interrupt());
 
@@ -106,10 +107,10 @@ mod test {
     fn test_thread_basics() {
         let flag = AtomicBool::new(false);
         let thread_fn = || {
-            assert_eq!(false, flag.load(Ordering::Relaxed));
+            assert!(!flag.load(Ordering::Relaxed));
             flag.store(true, Ordering::Relaxed);
             Thread::yield_current();
-            assert_eq!(false, flag.load(Ordering::Relaxed));
+            assert!(!flag.load(Ordering::Relaxed));
             flag.store(true, Ordering::Relaxed);
         };
 
@@ -117,10 +118,10 @@ mod test {
         thread.lock().wake();
 
         Thread::yield_current();
-        assert_eq!(true, flag.load(Ordering::Relaxed));
+        assert!(flag.load(Ordering::Relaxed));
         flag.store(false, Ordering::Relaxed);
         Thread::yield_current();
-        assert_eq!(true, flag.load(Ordering::Relaxed));
+        assert!(flag.load(Ordering::Relaxed));
         assert!(matches!(*thread.lock().state(), ThreadState::Dead));
     }
 }

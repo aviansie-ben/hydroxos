@@ -72,6 +72,7 @@ impl SavedBasicRegisters {
         self.gprs[reg as usize] = val;
     }
 
+    #[allow(clippy::fn_to_numeric_cast)]
     pub fn new_kernel_thread(f: extern "C" fn(*mut u8) -> !, arg: *mut u8, stack: *mut u8) -> SavedBasicRegisters {
         let mut regs = SavedBasicRegisters::new();
 
@@ -112,13 +113,8 @@ impl SavedBasicRegisters {
 fn to_ymm_val(lo: &[u8; 16], hi: &[u8; 16]) -> [u8; 32] {
     let mut result = [0; 32];
 
-    for i in 0..16 {
-        result[i] = lo[i];
-    }
-
-    for i in 0..16 {
-        result[i + 16] = hi[i];
-    }
+    result[0..16].copy_from_slice(&lo[..]);
+    result[16..32].copy_from_slice(&hi[..]);
 
     result
 }
@@ -127,13 +123,8 @@ fn from_ymm_val(val: &[u8; 32]) -> ([u8; 16], [u8; 16]) {
     let mut lo = [0; 16];
     let mut hi = [0; 16];
 
-    for i in 0..16 {
-        lo[i] = val[i];
-    }
-
-    for i in 0..16 {
-        hi[i] = val[i + 16];
-    }
+    lo.copy_from_slice(&val[0..16]);
+    hi.copy_from_slice(&val[16..32]);
 
     (lo, hi)
 }

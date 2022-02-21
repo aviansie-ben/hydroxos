@@ -16,6 +16,10 @@
 #![reexport_test_harness_main = "test_harness_main"]
 #![test_runner(crate::test_util::run_tests)]
 
+#![allow(clippy::match_like_matches_macro)]
+#![allow(clippy::new_without_default)]
+#![allow(clippy::result_unit_err)]
+
 extern crate alloc;
 
 // Declared first so we can use the log! macro in all other modules
@@ -48,7 +52,9 @@ mod test {
             crate::sched::init();
         };
         crate::test_harness_main();
-        loop {}
+        loop {
+            ::x86_64::instructions::hlt();
+        }
     }
 
     #[panic_handler]

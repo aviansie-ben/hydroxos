@@ -12,7 +12,9 @@ pub fn show_panic_crash_screen(info: &PanicInfo) -> ! {
 
     let _ = write!(w, "{}", info);
 
-    loop {}
+    loop {
+        ::x86_64::instructions::hlt();
+    }
 }
 
 #[alloc_error_handler]

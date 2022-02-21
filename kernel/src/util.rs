@@ -77,8 +77,7 @@ impl<T> UnitOrPanic for T {
 }
 
 impl UnitOrPanic for () {
-    fn unit_or_panic() -> () {
-        ()
+    fn unit_or_panic() {
     }
 }
 

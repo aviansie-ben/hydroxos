@@ -15,11 +15,13 @@ use crate::sched::wait::ThreadWaitList;
 use crate::sync::uninterruptible::{UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
 use crate::util::SendPtr;
 
+type FutureWaitAction = dyn FnOnce(*const (), &mut UninterruptibleSpinlockGuard<FutureWaitGeneric>) + Send;
+
 struct FutureWaitGeneric {
     wait_refs: usize,
     val_refs: usize,
     resolved: bool,
-    actions: Vec<Box<dyn FnOnce(*const (), &mut UninterruptibleSpinlockGuard<FutureWaitGeneric>) + Send>>,
+    actions: Vec<Box<FutureWaitAction>>,
     wait: ThreadWaitList
 }
 
@@ -432,7 +434,7 @@ impl<T> FutureWriter<T> {
         let val_ptr = (*ptr).val.get();
         wait.resolved = true;
 
-        let actions = mem::replace(&mut wait.actions, vec![]);
+        let actions = mem::take(&mut wait.actions);
         if !actions.is_empty() {
             for a in actions.into_iter() {
                 a(val_ptr as *const (), &mut wait);

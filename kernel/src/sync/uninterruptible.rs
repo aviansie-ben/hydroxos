@@ -131,11 +131,7 @@ impl<T> UninterruptibleSpinlock<T> {
     pub fn try_lock(&self) -> Option<UninterruptibleSpinlockGuard<T>> {
         let interrupt_disabler = InterruptDisabler::new();
 
-        if let Some(guard) = self.0.try_lock() {
-            Some(UninterruptibleSpinlockGuard(guard, interrupt_disabler))
-        } else {
-            None
-        }
+        self.0.try_lock().map(|guard| UninterruptibleSpinlockGuard(guard, interrupt_disabler))
     }
 
     /// Disables interrupts and locks this [`UninterruptibleSpinlock`], then calls the provided function with the underlying data. Once the

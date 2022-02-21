@@ -145,7 +145,7 @@ unsafe extern "C" fn handle_interrupt(frame: &mut InterruptFrame) {
 
     let interrupt_num = frame.interrupt_num as u8;
 
-    if interrupt_num >= IRQS_START && interrupt_num < EXT_START {
+    if (IRQS_START..EXT_START).contains(&interrupt_num) {
         sched::begin_interrupt();
     };
 
@@ -369,6 +369,7 @@ impl InterruptTableEntry {
         self.options |= ty;
     }
 
+    #[allow(clippy::fn_to_numeric_cast)]
     fn set_handler(&mut self, f: Option<extern "C" fn()>) {
         if let Some(f) = f {
             let f = f as u64;
