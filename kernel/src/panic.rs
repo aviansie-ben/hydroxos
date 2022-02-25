@@ -1,12 +1,16 @@
 use core::panic::PanicInfo;
 
+use x86_64::PhysAddr;
+
+use crate::arch::page::get_phys_mem_ptr_mut;
+
 #[cfg(not(feature = "check_arch_api"))]
 pub fn show_panic_crash_screen(info: &PanicInfo) -> ! {
     use core::fmt::Write;
 
     use crate::arch::x86_64::dev::vgabuf::{Color, TextBuffer, Writer};
 
-    let mut vga_buf = unsafe { TextBuffer::new(0xb8000 as *mut u8, 80, 25) };
+    let mut vga_buf = unsafe { TextBuffer::new(get_phys_mem_ptr_mut(PhysAddr::new(0xb8000)), 80, 25) };
     let mut w = Writer::new(&mut vga_buf);
 
     w.set_color(Color::White, Color::Red);
