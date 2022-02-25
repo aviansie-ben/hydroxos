@@ -304,9 +304,6 @@ impl Future<()> {
         let mut num_futures = 0;
         for mut f in fs {
             num_futures += 1;
-            unsafe {
-                (*wait.unwrap()).generic.lock().wait_refs += 1;
-            }
 
             f.when_resolved(move |_| unsafe {
                 let wait_generic = (*wait.unwrap()).generic.lock();
@@ -320,14 +317,12 @@ impl Future<()> {
         }
 
         unsafe {
-            let mut wait_generic = (*wait.unwrap()).generic.lock();
+            let wait_generic = (*wait.unwrap()).generic.lock();
 
             *(*(*wait.unwrap()).val.get()).as_mut_ptr() -= usize::MAX - num_futures;
 
             if *(*(*wait.unwrap()).val.get()).as_ptr() == 0 {
                 FutureWriter::finish_internal(wait.unwrap(), wait_generic);
-            } else {
-                wait_generic.wait_refs -= 1;
             }
         }
 
