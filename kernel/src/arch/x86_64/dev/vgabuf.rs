@@ -3,6 +3,7 @@ use core::fmt;
 use x86_64::instructions::port::Port;
 
 use crate::io::ansi::AnsiColor;
+use crate::io::vt::{VTChar, VirtualTerminalDisplay, VirtualTerminalInternals};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -149,6 +150,37 @@ impl TextBuffer {
 }
 
 unsafe impl Send for TextBuffer {}
+
+impl VirtualTerminalDisplay for TextBuffer {
+    fn size(&self) -> (usize, usize) {
+        (self.width, self.height)
+    }
+
+    fn clear(&mut self) {
+        self.clear(Color::White, Color::Black);
+    }
+
+    fn redraw(&mut self, vt: &VirtualTerminalInternals) {
+        for y in 0..vt.size.1.min(self.height) {
+            for x in 0..vt.size.0.min(self.width) {
+                let VTChar { ch, fg_color, bg_color } = vt.buf[vt.off(x, y)];
+                let ch = if ch.is_ascii() && !ch.is_ascii_control() {
+                    ch as u8
+                } else {
+                    b'\xfe'
+                };
+
+                self.set(x, y, ch, Color::from_ansi_color(fg_color), Color::from_ansi_color(bg_color));
+            }
+        }
+
+        if vt.cursor_hidden {
+            self.hide_cursor();
+        } else {
+            self.move_cursor(vt.cursor_pos.0, vt.cursor_pos.1);
+        };
+    }
+}
 
 pub struct Writer<'a> {
     x: usize,

@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use core::arch::asm;
 use core::ptr;
 
@@ -17,10 +18,10 @@ pub mod regs;
 
 static KERNEL_FS_BASE: SharedUnsafeCell<u64> = SharedUnsafeCell::new(0);
 
-unsafe fn create_primary_display() -> VirtualTerminalDisplay {
+unsafe fn create_primary_display() -> Box<dyn VirtualTerminalDisplay> {
     use self::dev::vgabuf::TextBuffer;
 
-    VirtualTerminalDisplay::VgaText(TextBuffer::new(page::get_phys_mem_ptr_mut(PhysAddr::new(0xb8000)), 80, 25))
+    Box::new(TextBuffer::new(page::get_phys_mem_ptr_mut(PhysAddr::new(0xb8000)), 80, 25))
 }
 
 unsafe fn init_sse() {

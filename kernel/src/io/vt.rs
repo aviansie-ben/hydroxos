@@ -7,32 +7,28 @@ use crate::io::ansi::{AnsiColor, AnsiParser, AnsiParserAction, AnsiParserSgrActi
 use crate::io::tty::Tty;
 use crate::sync::{Future, UninterruptibleSpinlock};
 
-#[cfg(not(feature = "check_arch_api"))]
-use crate::arch::x86_64::dev::vgabuf;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct VTChar {
-    ch: char,
-    fg_color: AnsiColor,
-    bg_color: AnsiColor
+pub struct VTChar {
+    pub ch: char,
+    pub fg_color: AnsiColor,
+    pub bg_color: AnsiColor
 }
 
 #[derive(Debug)]
-struct VirtualTerminalInternals {
-    buf: Box<[VTChar]>,
-    buf_line: usize,
-    size: (usize, usize),
+pub struct VirtualTerminalInternals {
+    pub buf: Box<[VTChar]>,
+    pub buf_line: usize,
+    pub size: (usize, usize),
     ansi: AnsiParser,
-    cursor_pos: (usize, usize),
-    fg_color: AnsiColor,
-    bg_color: AnsiColor,
-    #[allow(unused)]
-    cursor_hidden: bool,
+    pub cursor_pos: (usize, usize),
+    pub fg_color: AnsiColor,
+    pub bg_color: AnsiColor,
+    pub cursor_hidden: bool,
     id: usize
 }
 
 impl VirtualTerminalInternals {
-    fn off(&self, x: usize, y: usize) -> usize {
+    pub fn off(&self, x: usize, y: usize) -> usize {
         let (w, h) = self.size;
 
         let y = y + self.buf_line;
@@ -41,13 +37,13 @@ impl VirtualTerminalInternals {
         y * w + x
     }
 
-    fn buf_end(&self) -> usize {
+    pub fn buf_end(&self) -> usize {
         let (w, h) = self.size;
 
         w * h
     }
 
-    fn cursor_off(&self) -> usize {
+    pub fn cursor_off(&self) -> usize {
         let (x, y) = self.cursor_pos;
         self.off(x, y)
     }
@@ -217,59 +213,16 @@ impl VirtualTerminal {
     }
 }
 
-pub enum VirtualTerminalDisplay {
-    #[cfg(not(feature = "check_arch_api"))]
-    VgaText(vgabuf::TextBuffer)
-}
-
-impl VirtualTerminalDisplay {
-    pub fn size(&self) -> (usize, usize) {
-        match *self {
-            #[cfg(not(feature = "check_arch_api"))]
-            VirtualTerminalDisplay::VgaText(ref buf) => buf.size()
-        }
-    }
-
-    pub fn clear(&mut self) {
-        match *self {
-            #[cfg(not(feature = "check_arch_api"))]
-            VirtualTerminalDisplay::VgaText(ref mut buf) => {
-                buf.clear(vgabuf::Color::White, vgabuf::Color::Black);
-            }
-        };
-    }
-
-    fn redraw(&mut self, #[allow(unused)] term: &VirtualTerminalInternals) {
-        match *self {
-            #[cfg(not(feature = "check_arch_api"))]
-            VirtualTerminalDisplay::VgaText(ref mut buf) => {
-                for y in 0..term.size.1.min(buf.size().1) {
-                    for x in 0..term.size.0.min(buf.size().0) {
-                        let VTChar { ch, fg_color, bg_color } = term.buf[term.off(x, y)];
-                        let ch = if ch.is_ascii() && !ch.is_ascii_control() {
-                            ch as u8
-                        } else {
-                            b'\xfe'
-                        };
-
-                        buf.set(x, y, ch, vgabuf::Color::from_ansi_color(fg_color), vgabuf::Color::from_ansi_color(bg_color));
-                    }
-                }
-
-                if term.cursor_hidden {
-                    buf.hide_cursor();
-                } else {
-                    buf.move_cursor(term.cursor_pos.0, term.cursor_pos.1);
-                };
-            }
-        };
-    }
+pub trait VirtualTerminalDisplay: Send {
+    fn size(&self) -> (usize, usize);
+    fn clear(&mut self);
+    fn redraw(&mut self, vt: &VirtualTerminalInternals);
 }
 
 static VIRTUAL_TERMINALS: UninterruptibleSpinlock<Vec<Arc<VirtualTerminal>>> = UninterruptibleSpinlock::new(Vec::new());
-static VIRTUAL_DISPLAYS: UninterruptibleSpinlock<Vec<(VirtualTerminalDisplay, usize)>> = UninterruptibleSpinlock::new(Vec::new());
+static VIRTUAL_DISPLAYS: UninterruptibleSpinlock<Vec<(Box<dyn VirtualTerminalDisplay>, usize)>> = UninterruptibleSpinlock::new(Vec::new());
 
-pub fn init(primary_display: VirtualTerminalDisplay, num_terminals: usize) {
+pub fn init(primary_display: Box<dyn VirtualTerminalDisplay>, num_terminals: usize) {
     assert!(num_terminals > 0);
 
     let (width, height) = primary_display.size();
