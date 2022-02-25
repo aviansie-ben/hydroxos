@@ -12,10 +12,10 @@ use core::ptr;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use super::wait::{ThreadWaitList, ThreadWaitState};
-use crate::sync::uninterruptible::{InterruptDisabler, UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
-use crate::util::{PinWeak, SharedUnsafeCell};
 use crate::arch::interrupt::InterruptFrame;
 use crate::arch::regs::SavedRegisters;
+use crate::sync::uninterruptible::{InterruptDisabler, UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
+use crate::util::{PinWeak, SharedUnsafeCell};
 
 static NEXT_PID: AtomicU64 = AtomicU64::new(0);
 

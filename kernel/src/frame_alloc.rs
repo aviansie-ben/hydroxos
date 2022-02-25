@@ -5,9 +5,9 @@ use core::mem::MaybeUninit;
 use bootloader::bootinfo::MemoryRegionType;
 use bootloader::BootInfo;
 
-use crate::sync::uninterruptible::{UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
+use crate::arch::page::{get_phys_mem_addr, get_phys_mem_ptr_mut, PAGE_SIZE};
 use crate::arch::PhysAddr;
-use crate::arch::page::{get_phys_mem_ptr_mut, get_phys_mem_addr, PAGE_SIZE};
+use crate::sync::uninterruptible::{UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
 
 const NUM_FRAMES_PER_PAGE: usize = PAGE_SIZE / core::mem::size_of::<PhysAddr>();
 
@@ -241,9 +241,9 @@ mod tests {
     use core::mem::MaybeUninit;
 
     use super::{FrameAllocator, StackFrameAllocator, NUM_FRAMES_PER_PAGE};
-    use crate::util::PageAligned;
-    use crate::arch::PhysAddr;
     use crate::arch::page::PAGE_SIZE;
+    use crate::arch::PhysAddr;
+    use crate::util::PageAligned;
 
     static TEST_AREA: PageAligned<[[u8; PAGE_SIZE]; 10]> = PageAligned::new([[0; PAGE_SIZE]; 10]);
 

@@ -15,7 +15,6 @@
 #![feature(specialization)]
 #![reexport_test_harness_main = "test_harness_main"]
 #![test_runner(crate::test_util::run_tests)]
-
 #![allow(clippy::match_like_matches_macro)]
 #![allow(clippy::new_without_default)]
 #![allow(clippy::result_unit_err)]
