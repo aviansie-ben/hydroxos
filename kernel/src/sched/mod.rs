@@ -54,7 +54,6 @@ pub fn is_handling_interrupt() -> bool {
     unsafe { *IN_INTERRUPT.get() }
 }
 
-#[allow(clippy::fn_to_numeric_cast)]
 pub unsafe fn perform_context_switch_interrupt(old_thread_lock: Option<task::ThreadLock>, interrupt_frame: &mut InterruptFrame) {
     assert!(is_handling_interrupt());
 

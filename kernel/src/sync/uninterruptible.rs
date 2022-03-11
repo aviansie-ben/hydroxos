@@ -12,7 +12,7 @@
 //! interrupt handler is waiting for the thread to release the lock before it can complete. This can be corrected by using an
 //! uninterruptible spinlock such as [`UninterruptibleSpinlock`], which disable all interrupts on the current CPU core prior to acquiring
 //! a lock and re-enable them only upon releasing the last guard on the current CPU core.
-//
+//!
 //! These uninterruptible spinlocks also have the added benefit of avoiding starvation that may occur if an interrupt takes too long to
 //! process while a lock is held. Instead, handling of the interrupt will be delayed until after the lock is released and thus avoid
 //! potentially forcing other CPU cores to wait while the interrupt is handled.

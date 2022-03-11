@@ -314,6 +314,7 @@ impl InterruptFrame {
         self.gsbase = saved.gsbase;
     }
 
+    #[allow(clippy::fn_to_numeric_cast)]
     pub fn set_to_idle(&mut self) {
         // TODO Handle switch out of user-mode
         self.rip = super::idle as u64;

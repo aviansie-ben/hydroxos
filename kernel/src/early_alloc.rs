@@ -1,7 +1,7 @@
 use core::alloc::{GlobalAlloc, Layout};
 use core::convert::TryFrom;
-use core::ptr;
 use core::sync::atomic::{AtomicPtr, Ordering};
+use core::{cmp, ptr};
 
 use crate::util::{PageAligned, SharedUnsafeCell};
 
@@ -38,7 +38,7 @@ fn get_full_size(size: usize) -> u32 {
 
 pub fn alloc(size: usize, align: usize) -> *mut u8 {
     // We always need at least 4 byte alignment, since we store the 4 byte allocation size after each block
-    let align = u32::try_from(align.max(4)).ok().expect("Early allocation too large");
+    let align = u32::try_from(align.max(4)).expect("Early allocation too large");
     let size = get_full_size(size);
 
     unsafe {
@@ -130,12 +130,10 @@ unsafe fn realloc_shrink(ptr: *mut u8, old_size: usize, new_size: usize) -> *mut
 }
 
 pub unsafe fn realloc(ptr: *mut u8, old_size: usize, new_size: usize) -> *mut u8 {
-    if new_size > old_size {
-        realloc_grow(ptr, old_size, new_size)
-    } else if new_size < old_size {
-        realloc_shrink(ptr, old_size, new_size)
-    } else {
-        ptr
+    match new_size.cmp(&old_size) {
+        cmp::Ordering::Greater => realloc_grow(ptr, old_size, new_size),
+        cmp::Ordering::Less => realloc_shrink(ptr, old_size, new_size),
+        cmp::Ordering::Equal => ptr
     }
 }
 
