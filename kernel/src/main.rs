@@ -14,34 +14,12 @@ entry_point!(kernel_main);
 
 #[cfg(not(test))]
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
-    use hydroxos_kernel::arch::page::AddressSpace;
     use hydroxos_kernel::log;
-    use hydroxos_kernel::virtual_alloc::VirtualAllocRegion;
 
     unsafe {
         hydroxos_kernel::init_phase_1(boot_info);
         hydroxos_kernel::init_phase_2();
     };
-
-    let addr = AddressSpace::kernel().virtual_alloc().alloc(8192).unwrap().start();
-    unsafe {
-        AddressSpace::kernel()
-            .virtual_alloc()
-            .free(VirtualAllocRegion::new(addr, addr + 4096u64));
-        AddressSpace::kernel()
-            .virtual_alloc()
-            .free(VirtualAllocRegion::new(addr + 4096u64, addr + 8192u64));
-    }
-
-    for region in AddressSpace::kernel().virtual_alloc().free_regions() {
-        log!(
-            Debug,
-            "kernel",
-            "Free region: (0x{:016x}, 0x{:016x})",
-            region.start().as_u64(),
-            region.end().as_u64()
-        );
-    }
 
     log!(Info, "kernel", "Done booting");
     hydroxos_kernel::arch::halt();
