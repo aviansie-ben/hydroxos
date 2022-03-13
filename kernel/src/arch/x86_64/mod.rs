@@ -3,7 +3,7 @@ use core::arch::asm;
 use core::ptr;
 
 use bootloader::BootInfo;
-pub use x86_64::PhysAddr;
+pub use x86_64::{PhysAddr, VirtAddr};
 
 use crate::io::vt::VirtualTerminalDisplay;
 use crate::util::SharedUnsafeCell;

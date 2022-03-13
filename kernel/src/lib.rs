@@ -35,6 +35,7 @@ pub mod sched;
 pub mod sync;
 pub mod test_util;
 pub mod util;
+pub mod virtual_alloc;
 
 pub unsafe fn init_phase_1(boot_info: &'static BootInfo) {
     use crate::arch::page::PAGE_SIZE;

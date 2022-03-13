@@ -13,6 +13,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use super::wait::{ThreadWaitList, ThreadWaitState};
 use crate::arch::interrupt::InterruptFrame;
+use crate::arch::page::AddressSpace;
 use crate::arch::regs::SavedRegisters;
 use crate::sync::uninterruptible::{InterruptDisabler, UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
 use crate::util::{PinWeak, SharedUnsafeCell};
@@ -26,7 +27,8 @@ struct ProcessInternal {
     threads_head: Option<Pin<Arc<Thread>>>,
     threads_tail: *const Thread,
     ready_head: *const Thread,
-    ready_tail: *const Thread
+    ready_tail: *const Thread,
+    addr_space: Option<AddressSpace>
 }
 
 unsafe impl Send for ProcessInternal {}
@@ -43,7 +45,9 @@ pub struct Process {
 }
 
 impl Process {
-    fn create_internal(pid: u64) -> Pin<Arc<Process>> {
+    fn create_internal(pid: u64, addr_space: Option<AddressSpace>) -> Pin<Arc<Process>> {
+        assert_eq!(pid == 0, addr_space.is_none());
+
         Arc::pin(Process {
             pid,
             internal: UninterruptibleSpinlock::new(ProcessInternal {
@@ -51,7 +55,8 @@ impl Process {
                 threads_head: None,
                 threads_tail: ptr::null(),
                 ready_head: ptr::null(),
-                ready_tail: ptr::null()
+                ready_tail: ptr::null(),
+                addr_space
             })
         })
     }
@@ -65,7 +70,7 @@ impl Process {
     pub(super) unsafe fn init_kernel_process() {
         debug_assert!(NEXT_PID.load(Ordering::Relaxed) == 0);
 
-        ptr::write((*KERNEL_PROCESS.get()).as_mut_ptr(), Process::create_internal(0));
+        ptr::write((*KERNEL_PROCESS.get()).as_mut_ptr(), Process::create_internal(0, None));
         NEXT_PID.store(1, Ordering::Relaxed);
 
         let init_thread = Thread::create_internal(&mut Process::kernel().lock(), SavedRegisters::new());
@@ -266,6 +271,11 @@ impl<'a> ProcessLock<'a> {
             self.guard.ready_head = thread as *const _;
         };
         self.guard.ready_tail = thread as *const _;
+    }
+
+    /// Gets a mutable reference to the address space used by this process. For the kernel process, `None` is returned.
+    pub fn addr_space(&mut self) -> Option<&mut AddressSpace> {
+        self.guard.addr_space.as_mut()
     }
 
     /// Gets a reference to the Process structure that this guard has locked.

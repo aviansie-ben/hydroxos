@@ -1,21 +1,25 @@
+use core::ops::Range;
 use core::ptr;
 
 use x86_64::registers::control::Cr3;
 use x86_64::structures::paging::mapper::PageTableFrameMapping;
 use x86_64::structures::paging::page_table::PageTableEntry;
 use x86_64::structures::paging::{FrameDeallocator, MappedPageTable, PageTable, PageTableFlags, PageTableIndex, PhysFrame, Size4KiB};
-use x86_64::PhysAddr;
+use x86_64::{PhysAddr, VirtAddr};
 
 use crate::frame_alloc::FrameAllocator;
 use crate::sync::uninterruptible::UninterruptibleSpinlockGuard;
 use crate::sync::UninterruptibleSpinlock;
 use crate::util::SharedUnsafeCell;
+use crate::virtual_alloc::{VirtualAllocRegion, VirtualAllocator};
 
 pub const PAGE_SIZE: usize = 4096;
 
 static PHYS_MEM_BASE: SharedUnsafeCell<*mut u8> = SharedUnsafeCell::new(core::ptr::null_mut());
 static KERNEL_ADDRESS_SPACE: SharedUnsafeCell<UninterruptibleSpinlock<AddressSpace>> =
-    SharedUnsafeCell::new(UninterruptibleSpinlock::new(unsafe { AddressSpace::from_ptr(PhysAddr::zero()) }));
+    SharedUnsafeCell::new(UninterruptibleSpinlock::new(unsafe {
+        AddressSpace::from_page_table(PhysAddr::zero())
+    }));
 
 pub fn init_phys_mem_base(phys_mem_base: *mut u8) {
     unsafe {
@@ -61,25 +65,35 @@ impl<'a, T: FrameAllocator> FrameDeallocator<Size4KiB> for PhysFrameDeallocator<
     }
 }
 
-pub struct AddressSpace(PhysAddr);
+pub struct AddressSpace {
+    page_table: PhysAddr,
+    virtual_alloc: VirtualAllocator
+}
 
 impl AddressSpace {
+    pub(super) const unsafe fn from_page_table(page_table: PhysAddr) -> AddressSpace {
+        AddressSpace {
+            page_table,
+            virtual_alloc: VirtualAllocator::new()
+        }
+    }
+
+    pub(crate) unsafe fn new_kernel() -> AddressSpace {
+        AddressSpace::from_page_table(Cr3::read().0.start_address())
+    }
+
     pub fn kernel() -> UninterruptibleSpinlockGuard<'static, AddressSpace> {
         unsafe {
             let kernel_addrspace = (*KERNEL_ADDRESS_SPACE.get()).lock();
 
-            assert_ne!(kernel_addrspace.0, PhysAddr::zero());
+            assert_ne!(kernel_addrspace.page_table, PhysAddr::zero());
             kernel_addrspace
         }
     }
 
-    pub const unsafe fn from_ptr(ptr: PhysAddr) -> AddressSpace {
-        AddressSpace(ptr)
-    }
-
     pub fn new() -> AddressSpace {
         unsafe {
-            let mut addrspace = AddressSpace::from_ptr(crate::frame_alloc::get_allocator().alloc_one().unwrap());
+            let mut addrspace = AddressSpace::from_page_table(crate::frame_alloc::get_allocator().alloc_one().unwrap());
             let mut l4_table = addrspace.as_page_table();
             let l4_table = l4_table.level_4_table();
 
@@ -99,24 +113,71 @@ impl AddressSpace {
                 }
             };
 
+            addrspace.virtual_alloc.free(VirtualAllocRegion::new(
+                VirtAddr::new(PAGE_SIZE as u64),
+                VirtAddr::new(0x00007ffffffff000)
+            ));
+
             addrspace
         }
     }
 
+    pub(crate) unsafe fn init_kernel_virtual_alloc(&mut self) {
+        fn find_free_regions_in(table: &PageTable, range: Range<usize>, start_addr: VirtAddr, level: u64, out: &mut VirtualAllocator) {
+            let page_size = PAGE_SIZE << ((level - 1) * 9);
+
+            for (i, j) in range.enumerate() {
+                let entry = &table[j];
+                let start_addr = start_addr + (i * page_size);
+
+                if entry.is_unused() {
+                    unsafe {
+                        out.free(VirtualAllocRegion::new(start_addr, start_addr + page_size));
+                    }
+                } else if level > 1 && !entry.flags().contains(PageTableFlags::HUGE_PAGE) {
+                    find_free_regions_in(
+                        unsafe { &*get_phys_mem_ptr(entry.frame().unwrap().start_address()) },
+                        0..512,
+                        start_addr,
+                        level - 1,
+                        out
+                    );
+                }
+            }
+        }
+
+        find_free_regions_in(
+            &*get_phys_mem_ptr(self.page_table),
+            256..511,
+            VirtAddr::new(0xffff800000000000),
+            4,
+            &mut self.virtual_alloc
+        );
+    }
+
+    pub fn virtual_alloc(&mut self) -> &mut VirtualAllocator {
+        &mut self.virtual_alloc
+    }
+
     fn as_page_table(&mut self) -> MappedPageTable<impl PageTableFrameMapping> {
-        unsafe { MappedPageTable::new(&mut *(get_phys_mem_ptr_mut(self.0) as *mut PageTable), PhysPageTableFrameMapping) }
+        unsafe {
+            MappedPageTable::new(
+                &mut *(get_phys_mem_ptr_mut(self.page_table) as *mut PageTable),
+                PhysPageTableFrameMapping
+            )
+        }
     }
 }
 
 pub(super) unsafe fn init_kernel_addrspace() {
-    if (init_kernel_addrspace as *const () as u64) < 0xffff000000000000 {
+    if (init_kernel_addrspace as *const () as u64) < 0xffff800000000000 {
         panic!("Kernel is loaded in lower-half?");
     };
 
     let mut kernel_addrspace = (*KERNEL_ADDRESS_SPACE.get()).lock();
-    assert_eq!(kernel_addrspace.0, PhysAddr::zero());
+    assert_eq!(kernel_addrspace.page_table, PhysAddr::zero());
 
-    (*kernel_addrspace).0 = Cr3::read().0.start_address();
+    *kernel_addrspace = AddressSpace::new_kernel();
 
     let mut kl4_table = kernel_addrspace.as_page_table();
 
@@ -144,5 +205,7 @@ pub(super) unsafe fn init_kernel_addrspace() {
         }
 
         x86_64::instructions::tlb::flush_all();
-    };
+    }
+
+    kernel_addrspace.init_kernel_virtual_alloc();
 }
