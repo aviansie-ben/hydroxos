@@ -241,7 +241,7 @@ mod tests {
     use core::mem::MaybeUninit;
 
     use super::{FrameAllocator, StackFrameAllocator, NUM_FRAMES_PER_PAGE};
-    use crate::arch::page::PAGE_SIZE;
+    use crate::arch::page::{get_phys_mem_ptr_mut, PAGE_SIZE};
     use crate::arch::PhysAddr;
     use crate::util::PageAligned;
 
@@ -252,7 +252,7 @@ mod tests {
         use x86_64::structures::paging::mapper::{OffsetPageTable, Translate, TranslateResult};
         use x86_64::VirtAddr;
 
-        use crate::arch::x86_64::page::{get_phys_mem_base, get_phys_mem_ptr_mut};
+        use crate::arch::x86_64::page::get_phys_mem_base;
 
         let addr = get_phys_mem_ptr_mut(x86_64::registers::control::Cr3::read().0.start_address());
         let table = OffsetPageTable::new(&mut *addr, VirtAddr::new(get_phys_mem_base() as u64));
@@ -320,5 +320,30 @@ mod tests {
 
             assert_eq!(None, allocator.alloc_one());
         };
+    }
+
+    #[test_case]
+    fn test_push_pop_stack_frame() {
+        unsafe {
+            let mut allocator = StackFrameAllocator::new();
+
+            for _ in 0..NUM_FRAMES_PER_PAGE {
+                allocator.free_one(get_test_page(0));
+            }
+
+            allocator.free_one(get_test_page(1));
+            allocator.free_one(get_test_page(1));
+
+            assert_eq!(allocator.num_frames_available(), NUM_FRAMES_PER_PAGE + 2);
+            assert_eq!(get_phys_mem_ptr_mut(get_test_page(1)), allocator.stack_top);
+            assert_eq!(get_test_page(0), (*allocator.stack_top).frames[0]);
+            assert_eq!(get_test_page(1), (*allocator.stack_top).frames[1]);
+
+            assert_eq!(Some(get_test_page(1)), allocator.alloc_one());
+            assert_eq!(Some(get_test_page(1)), allocator.alloc_one());
+
+            assert_eq!(allocator.num_frames_available(), NUM_FRAMES_PER_PAGE);
+            assert_eq!(get_phys_mem_ptr_mut(get_test_page(0)), allocator.stack_top);
+        }
     }
 }
