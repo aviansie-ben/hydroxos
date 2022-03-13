@@ -1,20 +1,25 @@
 use core::fmt::Write;
+use core::mem;
 use core::panic::PanicInfo;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use uart_16550::SerialPort;
 
+use crate::sched::task::{Process, Thread};
+use crate::sync::uninterruptible::InterruptDisabler;
 use crate::sync::UninterruptibleSpinlock;
 
 pub static TEST_SERIAL: UninterruptibleSpinlock<SerialPort> = UninterruptibleSpinlock::new(unsafe { SerialPort::new(0x3f8) });
 static IS_SKIPPED: AtomicBool = AtomicBool::new(false);
 static IS_TESTING: AtomicBool = AtomicBool::new(false);
+static TEST_FAILED: AtomicBool = AtomicBool::new(false);
+static TEST_IDX: AtomicUsize = AtomicUsize::new(0);
 
-pub trait Test {
+pub trait Test: Sync {
     fn run(&self);
 }
 
-impl<T: Fn()> Test for T {
+impl<T: Fn() + Sync> Test for T {
     fn run(&self) {
         write!(TEST_SERIAL.lock(), "test {} ... ", core::any::type_name::<T>()).unwrap();
         IS_SKIPPED.store(false, Ordering::Relaxed);
@@ -28,14 +33,34 @@ impl<T: Fn()> Test for T {
     }
 }
 
-pub fn run_tests(tests: &[&dyn Test]) -> ! {
+pub fn run_tests(tests: &'static [&dyn Test]) -> ! {
     TEST_SERIAL.lock().init();
     writeln!(TEST_SERIAL.lock(), "Running {} tests...", tests.len()).unwrap();
-    for test in tests {
-        test.run();
+
+    loop {
+        let tests = &tests[TEST_IDX.load(Ordering::Relaxed)..];
+
+        if tests.is_empty() {
+            break;
+        }
+
+        let test_thread = Process::kernel()
+            .lock()
+            .create_kernel_thread(move || run_tests_thread(tests), 64 * 1024);
+        let test_thread_complete = test_thread.lock().join();
+
+        test_thread.lock().wake();
+        test_thread_complete.unwrap_blocking();
     }
 
-    exit(0);
+    exit(if TEST_FAILED.load(Ordering::Relaxed) { 1 } else { 0 });
+}
+
+pub fn run_tests_thread(tests: &[&dyn Test]) {
+    for test in tests {
+        TEST_IDX.fetch_add(1, Ordering::Relaxed);
+        test.run();
+    }
 }
 
 pub fn skip(reason: &str) {
@@ -57,11 +82,30 @@ pub fn exit(_code: u32) -> ! {
 
 pub fn handle_test_panic(info: &PanicInfo) -> ! {
     let mut serial_lock = TEST_SERIAL.lock();
+    let is_testing = IS_TESTING.swap(false, Ordering::Relaxed);
 
-    if IS_TESTING.load(Ordering::Relaxed) {
+    if is_testing {
         let _ = writeln!(serial_lock, "\x1b[31mFAILED\x1b[0m");
-    };
+    }
 
     let _ = writeln!(serial_lock, "{}", info);
-    exit(1);
+
+    if is_testing {
+        if InterruptDisabler::num_held() > 1 {
+            let _ = writeln!(serial_lock, "Unable to continue testing due to live InterruptDisabler");
+            exit(1);
+        } else if !TEST_FAILED.swap(true, Ordering::Relaxed) {
+            let _ = writeln!(
+                serial_lock,
+                "WARNING: Trying to continue testing. System may be unstable after this point."
+            );
+        }
+
+        mem::drop(serial_lock);
+        unsafe {
+            Thread::kill_current();
+        }
+    } else {
+        exit(1);
+    }
 }
