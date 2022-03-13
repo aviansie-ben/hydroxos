@@ -15,7 +15,9 @@ use super::wait::{ThreadWaitList, ThreadWaitState};
 use crate::arch::interrupt::InterruptFrame;
 use crate::arch::page::AddressSpace;
 use crate::arch::regs::SavedRegisters;
+use crate::sync::future::FutureWriter;
 use crate::sync::uninterruptible::{InterruptDisabler, UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
+use crate::sync::Future;
 use crate::util::{PinWeak, SharedUnsafeCell};
 
 static NEXT_PID: AtomicU64 = AtomicU64::new(0);
@@ -317,7 +319,9 @@ pub enum ThreadState {
 
 struct ThreadInternal {
     state: ThreadState,
-    regs: SavedRegisters
+    regs: SavedRegisters,
+    join_waiter: Future<()>,
+    join_writer: Option<FutureWriter<()>>
 }
 
 unsafe impl Send for ThreadInternal {}
@@ -351,12 +355,16 @@ impl !Unpin for Thread {}
 
 impl Thread {
     fn create_internal(process_lock: &mut ProcessLock, regs: SavedRegisters) -> Pin<Arc<Thread>> {
+        let (join_waiter, join_writer) = Future::new();
+
         let thread = Arc::pin(Thread {
             process: PinWeak::downgrade(&process_lock.process.as_arc()),
             thread_id: process_lock.guard.next_thread_id,
             internal: UninterruptibleSpinlock::new(ThreadInternal {
                 state: ThreadState::Suspended,
-                regs
+                regs,
+                join_waiter,
+                join_writer: Some(join_writer)
             }),
             process_internal: SharedUnsafeCell::new(ThreadProcessInternal {
                 prev: process_lock.guard.threads_tail,
@@ -472,6 +480,9 @@ impl Thread {
         process_lock.remove_thread(&thread);
 
         mem::drop(process_lock);
+
+        thread_lock.guard.join_writer.take().unwrap().finish(());
+
         Thread::suspend_current(thread_lock);
         panic!("Dead thread was resurrected");
     }
@@ -674,5 +685,10 @@ impl<'a> ThreadLock<'a> {
     /// x86 must never be written with untrusted values.
     pub unsafe fn regs_mut(&mut self) -> &mut SavedRegisters {
         &mut self.guard.regs
+    }
+
+    /// Returns a future that will resolve to the unit value once this thread dies.
+    pub fn join(&self) -> Future<()> {
+        self.guard.join_waiter.clone()
     }
 }
