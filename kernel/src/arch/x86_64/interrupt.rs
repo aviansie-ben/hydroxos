@@ -6,6 +6,7 @@ use x86_64::structures::DescriptorTablePointer;
 use x86_64::{PrivilegeLevel, VirtAddr};
 
 use super::regs::{GeneralRegister, SavedBasicRegisters};
+use crate::sync::uninterruptible::InterruptDisabler;
 use crate::util::SharedUnsafeCell;
 
 macro_rules! handler_with_code {
@@ -152,6 +153,15 @@ unsafe extern "C" fn handle_interrupt(frame: &mut InterruptFrame) {
     // TODO Dynamically register interrupt handlers
     match interrupt_num {
         0x30 => {
+            assert_eq!(1, InterruptDisabler::num_held());
+
+            // When the provided ThreadLock is released, we don't want to enable interrupts in this interrupt handler. Instead, we want to
+            // ensure that interrupts are reset to their previous state when the calling thread is resumed.
+            if InterruptDisabler::was_enabled() {
+                frame.rflags |= 1 << 9;
+            }
+            InterruptDisabler::force_remain_disabled();
+
             crate::sched::perform_context_switch_interrupt(
                 Some(core::ptr::read(frame.rax as *const crate::sched::task::ThreadLock)),
                 frame

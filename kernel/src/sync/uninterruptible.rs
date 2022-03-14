@@ -59,6 +59,22 @@ impl InterruptDisabler {
         INTERRUPT_DISABLER_STATE.get().0
     }
 
+    /// Get whether interrupts were enabled when the first InterruptDisabler held on the current CPU core was created.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if no InterruptDisablers are held on the current CPU core. The caller should ensure that
+    /// [`InterruptDisabler::num_held`] is non-zero before calling this method.
+    pub fn was_enabled() -> bool {
+        assert!(InterruptDisabler::num_held() > 0);
+        INTERRUPT_DISABLER_STATE.get().1
+    }
+
+    /// Forces interrupts to remain disabled on the current CPU core when the last InterruptDisabler is dropped.
+    pub fn force_remain_disabled() {
+        INTERRUPT_DISABLER_STATE.set((InterruptDisabler::num_held(), false));
+    }
+
     /// Drops this interrupt-disabling guard without actually enabling interrupts. Returns `true` if interrupts would have been enabled had
     /// this guard been dropped normally and `false` otherwise.
     pub fn drop_without_enable(self) -> bool {
