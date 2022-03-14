@@ -96,7 +96,6 @@ impl SavedBasicRegisters {
 
         regs.rip = f;
         regs.rflags |= 1 << 9; // IF
-        regs.rflags |= 0x3 << 12; // IOPL
         regs.set_gpr(GeneralRegister::Rdi, arg);
         regs.set_gpr(GeneralRegister::Rsp, stack);
 
