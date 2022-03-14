@@ -104,6 +104,69 @@ impl Drop for InterruptDisabler {
     }
 }
 
+cfg_if::cfg_if! {
+    if #[cfg(feature = "spinlock_tracking")] {
+        use core::cell::UnsafeCell;
+        use core::ptr;
+
+        use itertools::Itertools;
+
+        const MAX_HELD_LOCKS: usize = 64;
+
+        #[thread_local]
+        static HELD_LOCKS: UnsafeCell<[*const (); MAX_HELD_LOCKS]> = UnsafeCell::new([ptr::null(); MAX_HELD_LOCKS]);
+
+        #[thread_local]
+        static HELD_LOCKS_LEN: Cell<usize> = Cell::new(0);
+
+        fn deadlock_check(lock: *const ()) {
+            if unsafe { (*HELD_LOCKS.get())[..HELD_LOCKS_LEN.get()].contains(&lock) } {
+                panic!("Attempt to acquire spinlock {:?} already held by current core", lock);
+            }
+        }
+
+        struct SpinlockTracker(*const ());
+
+        impl SpinlockTracker {
+            fn new(lock: *const ()) -> SpinlockTracker {
+                if HELD_LOCKS_LEN.get() == MAX_HELD_LOCKS {
+                    panic!("Acquired too many spinlocks!");
+                }
+
+                unsafe {
+                    (*HELD_LOCKS.get())[HELD_LOCKS_LEN.get()] = lock;
+                }
+                HELD_LOCKS_LEN.set(HELD_LOCKS_LEN.get() + 1);
+
+                SpinlockTracker(lock)
+            }
+        }
+
+        impl Drop for SpinlockTracker {
+            fn drop(&mut self) {
+                let held_locks = unsafe { &mut (*HELD_LOCKS.get())[..HELD_LOCKS_LEN.get()] };
+
+                if let Some((idx, _)) = held_locks.iter().find_position(|&&l| l == self.0) {
+                    held_locks.copy_within((idx + 1).., idx);
+                    HELD_LOCKS_LEN.set(HELD_LOCKS_LEN.get() - 1);
+                } else {
+                    panic!("Attempt to release spinlock {:?} not held by current core", self.0);
+                }
+            }
+        }
+    } else {
+        fn deadlock_check(_: *const ()) {}
+
+        struct SpinlockTracker;
+
+        impl SpinlockTracker {
+            fn new(_: *const ()) -> SpinlockTracker {
+                SpinlockTracker
+            }
+        }
+    }
+}
+
 /// A spinlock that keeps interrupts disabled on the local CPU core while it is locked.
 #[derive(Debug)]
 pub struct UninterruptibleSpinlock<T>(spin::Mutex<T>);
@@ -137,9 +200,14 @@ impl<T> UninterruptibleSpinlock<T> {
     /// returned guard will automatically unlock this spinlock and re-enable interrupts (if applicable) once it is dropped.
     pub fn lock(&self) -> UninterruptibleSpinlockGuard<T> {
         let interrupt_disabler = InterruptDisabler::new();
-        let guard = self.0.lock();
+        let guard = if let Some(guard) = self.0.try_lock() {
+            guard
+        } else {
+            deadlock_check(self as *const _ as *const ());
+            self.0.lock()
+        };
 
-        UninterruptibleSpinlockGuard(guard, interrupt_disabler)
+        UninterruptibleSpinlockGuard(guard, interrupt_disabler, SpinlockTracker::new(self as *const _ as *const ()))
     }
 
     /// Disables interrupts and attempts to lock this [`UninterruptibleSpinlock`], returning a guard if successful. If the attempt to lock
@@ -149,7 +217,7 @@ impl<T> UninterruptibleSpinlock<T> {
 
         self.0
             .try_lock()
-            .map(|guard| UninterruptibleSpinlockGuard(guard, interrupt_disabler))
+            .map(|guard| UninterruptibleSpinlockGuard(guard, interrupt_disabler, SpinlockTracker::new(self as *const _ as *const ())))
     }
 
     /// Disables interrupts and locks this [`UninterruptibleSpinlock`], then calls the provided function with the underlying data. Once the
@@ -174,7 +242,7 @@ impl<T> UninterruptibleSpinlock<T> {
 
 /// A guard that provides access to an [`UninterruptibleSpinlock`]'s internals. Releases the spinlock (and re-enables interrupts if
 /// applicable) when dropped.
-pub struct UninterruptibleSpinlockGuard<'a, T>(spin::MutexGuard<'a, T>, InterruptDisabler);
+pub struct UninterruptibleSpinlockGuard<'a, T>(spin::MutexGuard<'a, T>, InterruptDisabler, SpinlockTracker);
 
 impl<'a, T> Deref for UninterruptibleSpinlockGuard<'a, T> {
     type Target = T;

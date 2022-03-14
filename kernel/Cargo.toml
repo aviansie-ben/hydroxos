@@ -16,7 +16,9 @@ kernel-stack-size = 64
 physical-memory-offset = "0xFFFFF80000000000"
 
 [features]
+default = ["spinlock_tracking"]
 check_arch_api = []
+spinlock_tracking = []
 
 [dependencies]
 bootloader = { version = "0.9.21", features = ["map_physical_memory"] }
