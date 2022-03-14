@@ -35,10 +35,12 @@ unsafe fn init_sse() {
 unsafe fn init_bootstrap_tls(boot_info: &BootInfo) {
     if let Some(tls_template) = boot_info.tls_template() {
         assert!(tls_template.file_size <= tls_template.mem_size);
+        assert_eq!(0, tls_template.mem_size & 0xf);
 
         let tls = crate::early_alloc::alloc(tls_template.mem_size as usize + 8, 16);
-        let tib = tls.offset(tls_template.mem_size as isize);
+        let tib = tls.add(tls_template.mem_size as usize);
 
+        ptr::write_bytes(tls, 0, tls_template.mem_size as usize);
         ptr::copy_nonoverlapping(tls_template.start_addr as *mut u8, tls, tls_template.file_size as usize);
         ptr::write::<*mut u8>(tib as *mut *mut u8, tib as *mut u8);
 

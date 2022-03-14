@@ -11,11 +11,9 @@ SECTIONS
   .eh_frame : { *(.eh_frame*) }
 
   . = ALIGN(0x1000);
-  .tdata : { *(.tdata*) }
-  .tbss : { *(.tbss*) }
-  .got : { *(.got) }
-
-  . = ALIGN(0x1000);
   .data : { *(.data*) }
   .bss : { *(.bss*) *(COMMON) }
+
+  .tdata : ALIGN(16) { *(.tdata*) . = ALIGN(16); }
+  .tbss : ALIGN(16) { *(.tbss*) . = ALIGN(16); }
 }
