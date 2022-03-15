@@ -257,3 +257,152 @@ impl<'a, T> DerefMut for UninterruptibleSpinlockGuard<'a, T> {
         self.0.deref_mut()
     }
 }
+
+#[cfg(test)]
+mod test {
+    use cfg_if::cfg_if;
+    #[allow(unused_imports)]
+    use crate::test_util::skip;
+    use super::*;
+
+    #[test_case]
+    fn test_interrupt_disabler() {
+        assert_eq!(0, InterruptDisabler::num_held());
+        assert!(x86_64::instructions::interrupts::are_enabled());
+
+        {
+            let _disabler = InterruptDisabler::new();
+
+            assert!(!x86_64::instructions::interrupts::are_enabled());
+            assert_eq!(1, InterruptDisabler::num_held());
+            assert!(InterruptDisabler::was_enabled());
+        }
+
+        assert_eq!(0, InterruptDisabler::num_held());
+        assert!(x86_64::instructions::interrupts::are_enabled());
+    }
+
+    #[test_case]
+    fn test_interrupt_disabler_nested() {
+        assert_eq!(0, InterruptDisabler::num_held());
+        assert!(x86_64::instructions::interrupts::are_enabled());
+
+        {
+            let _disabler_1 = InterruptDisabler::new();
+
+            {
+                let _disabler_2 = InterruptDisabler::new();
+
+                assert!(!x86_64::instructions::interrupts::are_enabled());
+                assert_eq!(2, InterruptDisabler::num_held());
+                assert!(InterruptDisabler::was_enabled());
+            }
+
+            assert!(!x86_64::instructions::interrupts::are_enabled());
+            assert_eq!(1, InterruptDisabler::num_held());
+            assert!(InterruptDisabler::was_enabled());
+        }
+
+        assert_eq!(0, InterruptDisabler::num_held());
+        assert!(x86_64::instructions::interrupts::are_enabled());
+    }
+
+    #[test_case]
+    fn test_interrupt_disabler_keep_disable() {
+        assert_eq!(0, InterruptDisabler::num_held());
+        assert!(x86_64::instructions::interrupts::are_enabled());
+
+        x86_64::instructions::interrupts::disable();
+
+        {
+            let _disabler = InterruptDisabler::new();
+
+            assert!(!x86_64::instructions::interrupts::are_enabled());
+            assert_eq!(1, InterruptDisabler::num_held());
+            assert!(!InterruptDisabler::was_enabled());
+        }
+
+        assert_eq!(0, InterruptDisabler::num_held());
+        assert!(!x86_64::instructions::interrupts::are_enabled());
+
+        x86_64::instructions::interrupts::enable();
+    }
+
+    #[test_case]
+    fn test_interrupt_disabler_force_disable() {
+        assert_eq!(0, InterruptDisabler::num_held());
+        assert!(x86_64::instructions::interrupts::are_enabled());
+
+        {
+            let _disabler = InterruptDisabler::new();
+
+            InterruptDisabler::force_remain_disabled();
+
+            assert!(!x86_64::instructions::interrupts::are_enabled());
+            assert_eq!(1, InterruptDisabler::num_held());
+            assert!(!InterruptDisabler::was_enabled());
+        }
+
+        assert_eq!(0, InterruptDisabler::num_held());
+        assert!(!x86_64::instructions::interrupts::are_enabled());
+
+        x86_64::instructions::interrupts::enable();
+    }
+
+    #[test_case]
+    fn test_spinlock_tracking() {
+        cfg_if! {
+            if #[cfg(feature = "spinlock_tracking")] {
+                let lock1 = UninterruptibleSpinlock::new(());
+                let lock2 = UninterruptibleSpinlock::new(());
+                let lock3 = UninterruptibleSpinlock::new(());
+
+                assert_eq!(
+                    &[] as &[*const ()],
+                    unsafe { &(*HELD_LOCKS.get())[..HELD_LOCKS_LEN.get()] }
+                );
+
+                let lock1_guard = lock1.lock();
+                let lock2_guard = lock2.lock();
+                let lock3_guard = lock3.lock();
+
+                assert_eq!(
+                    &[
+                        &lock1 as *const _ as *const (),
+                        &lock2 as *const _ as *const (),
+                        &lock3 as *const _ as *const ()
+                    ],
+                    unsafe { &(*HELD_LOCKS.get())[..HELD_LOCKS_LEN.get()] }
+                );
+
+                mem::drop(lock2_guard);
+
+                assert_eq!(
+                    &[
+                        &lock1 as *const _ as *const (),
+                        &lock3 as *const _ as *const ()
+                    ],
+                    unsafe { &(*HELD_LOCKS.get())[..HELD_LOCKS_LEN.get()] }
+                );
+
+                mem::drop(lock3_guard);
+
+                assert_eq!(
+                    &[
+                        &lock1 as *const _ as *const ()
+                    ],
+                    unsafe { &(*HELD_LOCKS.get())[..HELD_LOCKS_LEN.get()] }
+                );
+
+                mem::drop(lock1_guard);
+
+                assert_eq!(
+                    &[] as &[*const ()],
+                    unsafe { &(*HELD_LOCKS.get())[..HELD_LOCKS_LEN.get()] }
+                );
+            } else {
+                skip("spinlock tracking disabled");
+            }
+        }
+    }
+}

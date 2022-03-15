@@ -57,6 +57,8 @@ pub fn run_tests(tests: &'static [&dyn Test]) -> ! {
 }
 
 pub fn run_tests_thread(tests: &[&dyn Test]) {
+    x86_64::instructions::interrupts::enable();
+
     for test in tests {
         TEST_IDX.fetch_add(1, Ordering::Relaxed);
         test.run();
