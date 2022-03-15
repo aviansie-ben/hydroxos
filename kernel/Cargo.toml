@@ -21,7 +21,7 @@ check_arch_api = []
 spinlock_tracking = []
 
 [dependencies]
-bootloader = { version = "0.9.21", features = ["map_physical_memory"] }
+bootloader = { version = "0.9.22", features = ["map_physical_memory"] }
 cfg-if = { version = "1.0.0" }
 itertools = { version = "0.10.2", default-features = false, features = ["use_alloc"] }
 spin = "0.9.2"
