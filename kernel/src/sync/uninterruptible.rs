@@ -261,9 +261,10 @@ impl<'a, T> DerefMut for UninterruptibleSpinlockGuard<'a, T> {
 #[cfg(test)]
 mod test {
     use cfg_if::cfg_if;
+
+    use super::*;
     #[allow(unused_imports)]
     use crate::test_util::skip;
-    use super::*;
 
     #[test_case]
     fn test_interrupt_disabler() {
