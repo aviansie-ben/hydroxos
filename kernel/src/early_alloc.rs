@@ -62,6 +62,7 @@ pub fn alloc(size: usize, align: usize) -> *mut u8 {
                 .compare_exchange(mark, mark.offset(alloc_size), Ordering::Relaxed, Ordering::Relaxed)
                 .is_ok()
             {
+                ptr::write_bytes(mark, 0xAD, (align_offset + size) as usize);
                 *(mark.add((align_offset + size - 4) as usize) as *mut u32) = alloc_size as u32;
                 break mark.add(align_offset as usize);
             };
@@ -101,6 +102,7 @@ unsafe fn realloc_grow(ptr: *mut u8, old_size: usize, new_size: usize) -> *mut u
             .compare_exchange(mark, ptr.add(new_size as usize), Ordering::Relaxed, Ordering::Relaxed)
             .is_ok()
         {
+            ptr::write_bytes(ptr.add(old_size as usize), 0xAD, (new_size - old_size) as usize);
             *(ptr.add((new_size - 4) as usize) as *mut u32) = real_new_size;
             return ptr;
         }
