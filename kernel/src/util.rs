@@ -1,5 +1,6 @@
 use alloc::sync::{Arc, Weak};
 use core::cell::UnsafeCell;
+use core::fmt;
 use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
 
@@ -130,5 +131,19 @@ impl<T: ?Sized> SendPtr<T> {
 
     pub fn unwrap(self) -> *const T {
         self.0
+    }
+}
+
+pub struct DisplayAsDebug<T: fmt::Display>(T);
+
+impl<T: fmt::Display> DisplayAsDebug<T> {
+    pub fn new(val: T) -> DisplayAsDebug<T> {
+        DisplayAsDebug(val)
+    }
+}
+
+impl<T: fmt::Display> fmt::Debug for DisplayAsDebug<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }

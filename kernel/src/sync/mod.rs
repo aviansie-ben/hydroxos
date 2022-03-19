@@ -5,6 +5,7 @@
 //! between different threads/cores running kernel code.
 
 pub mod future;
+pub mod mutex;
 pub mod uninterruptible;
 
 pub use future::Future;

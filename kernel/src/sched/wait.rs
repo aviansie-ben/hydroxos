@@ -4,10 +4,11 @@ use alloc::sync::Arc;
 use core::marker::PhantomData;
 use core::mem::{ManuallyDrop, MaybeUninit};
 use core::pin::Pin;
-use core::ptr;
+use core::{fmt, ptr};
 
 use super::task::{Thread, ThreadLock, ThreadState};
 use crate::sync::UninterruptibleSpinlock;
+use crate::util::DisplayAsDebug;
 
 /// State information for a thread which is waiting on a wait list.
 #[derive(Debug)]
@@ -188,7 +189,7 @@ impl ThreadWaitList {
     ///
     /// This method should not be called while any scheduler locks, such as thread and process locks, are held. Doing so may result in a
     /// deadlock occurring.
-    pub fn wake_one(&self) -> bool {
+    pub fn wake_one(&self) -> Option<Pin<Arc<Thread>>> {
         loop {
             break if let Some(thread) = self.internal.lock().dequeue() {
                 // SAFETY: A waiting -> ready transition is safe since the event the thread was waiting on has now occurred.
@@ -198,9 +199,9 @@ impl ThreadWaitList {
                     }
                 };
 
-                true
+                Some(thread)
             } else {
-                false
+                None
             };
         }
     }
@@ -232,6 +233,33 @@ impl Drop for ThreadWaitList {
         if !self.internal.try_lock().unwrap().head.is_null() {
             panic!("Attempt to drop non-empty ThreadWaitList");
         };
+    }
+}
+
+impl fmt::Debug for ThreadWaitList {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.internal.try_lock() {
+            Some(lock) => {
+                write!(f, "ThreadWaitList ")?;
+
+                let mut debug_list = f.debug_list();
+                let mut thread = lock.head;
+
+                while !thread.is_null() {
+                    unsafe {
+                        debug_list.entry(&DisplayAsDebug::new((*thread).debug_name()));
+                        thread = (*(*thread).wait_state()).next;
+                    }
+                }
+
+                debug_list.finish()?;
+            },
+            None => {
+                write!(f, "ThreadWaitList [ <locked> ]")?;
+            }
+        }
+
+        Ok(())
     }
 }
 

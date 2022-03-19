@@ -5,6 +5,7 @@ use alloc::sync::Arc;
 use core::arch::asm;
 use core::cell::UnsafeCell;
 use core::fmt;
+use core::fmt::Formatter;
 use core::marker::PhantomData;
 use core::mem::{self, MaybeUninit};
 use core::pin::Pin;
@@ -321,7 +322,7 @@ impl<'a, 'b> Iterator for ProcessThreadIterator<'a, 'b> {
 }
 
 /// Represents the execution state of a thread.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ThreadState {
     /// The thread is currently suspended and can be resumed by calling [`ThreadLock::wake`].
     Suspended,
@@ -545,7 +546,7 @@ impl Thread {
         self.wait_state.get()
     }
 
-    pub(super) fn as_arc(&self) -> Pin<Arc<Thread>> {
+    pub fn as_arc(&self) -> Pin<Arc<Thread>> {
         // SAFETY: All thread must be in an Arc. This is true since the only way to create a thread is via Thread::create_internal, which
         //         returns a Pin<Arc<Thread>>. Since threads created in this way must be in an Arc and cannot be moved out due to being in a
         //         Pin, any valid &Thread must be allocated in an Arc.
@@ -572,6 +573,20 @@ impl Thread {
     /// instead.
     pub unsafe fn from_raw(ptr: *const Thread) -> Pin<Arc<Thread>> {
         Pin::new_unchecked(Arc::from_raw(ptr))
+    }
+}
+
+impl PartialEq for Thread {
+    fn eq(&self, other: &Self) -> bool {
+        ptr::eq(self, other)
+    }
+}
+
+impl Eq for Thread {}
+
+impl fmt::Debug for Thread {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "Thread {}", self.debug_name())
     }
 }
 
