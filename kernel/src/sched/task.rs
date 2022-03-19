@@ -205,17 +205,35 @@ impl<'a> ProcessLock<'a> {
 
         let process_internal = &mut *thread.process_internal.get();
 
+        debug_assert_eq!(ptr::null(), process_internal.prev_ready);
+        debug_assert_eq!(ptr::null(), process_internal.next_ready);
+
         if let Some(ref mut next) = process_internal.next {
+            debug_assert_eq!((*next.process_internal.get()).prev, &**thread as *const _);
             (*next.process_internal.get()).prev = process_internal.prev;
         } else {
+            debug_assert_eq!(self.guard.threads_tail, &**thread as *const _);
             self.guard.threads_tail = process_internal.prev;
         };
 
         if !process_internal.prev.is_null() {
+            debug_assert_eq!(
+                (*(*process_internal.prev).process_internal.get())
+                    .next
+                    .as_ref()
+                    .map_or(ptr::null(), |t| &**t as *const _),
+                &**thread as *const _
+            );
             (*(*process_internal.prev).process_internal.get()).next = process_internal.next.take();
         } else {
+            debug_assert_eq!(
+                self.guard.threads_head.as_ref().map_or(ptr::null(), |t| &**t as *const _),
+                &**thread as *const _
+            );
             self.guard.threads_head = process_internal.next.take();
         };
+
+        process_internal.prev = ptr::null();
     }
 
     /// Attempts to dequeue a thread from this process's queue of threads that are in the ready state. If this process does not have any
@@ -376,7 +394,6 @@ impl Thread {
         });
 
         process_lock.guard.next_thread_id += 1;
-        process_lock.guard.threads_tail = &*thread;
 
         if process_lock.guard.threads_head.is_none() {
             process_lock.guard.threads_head = Some(thread.clone());
@@ -386,6 +403,8 @@ impl Thread {
                 (*(*process_lock.guard.threads_tail).process_internal.get()).next = Some(thread.clone());
             };
         };
+
+        process_lock.guard.threads_tail = &*thread;
 
         thread
     }
@@ -563,7 +582,7 @@ impl fmt::Display for ThreadDebugName<'_> {
         let thread = self.0;
 
         if let Some(process) = thread.process.upgrade() {
-            write!(f, "pid {}, thread {}", process.pid(), thread.thread_id())
+            write!(f, "(pid {}, thread {})", process.pid(), thread.thread_id())
         } else {
             write!(f, "(disconnected thread {:p})", thread)
         }
