@@ -134,8 +134,8 @@ impl VirtualTerminalInternals {
                 for &sgr in sgr[0..sgr_len].iter() {
                     match sgr {
                         AnsiParserSgrAction::Reset => {
-                            self.fg_color = AnsiColor::Black;
-                            self.bg_color = AnsiColor::White;
+                            self.fg_color = AnsiColor::White;
+                            self.bg_color = AnsiColor::Black;
                         },
                         AnsiParserSgrAction::SetFgColor(color) => {
                             self.fg_color = color;
