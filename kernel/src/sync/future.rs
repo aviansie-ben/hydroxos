@@ -8,25 +8,54 @@ use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::mem;
 use core::mem::MaybeUninit;
-use core::pin::Pin;
 use core::ptr;
 
 use crate::sched::wait::ThreadWaitList;
 use crate::sync::uninterruptible::{UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
 use crate::util::SendPtr;
 
-type FutureWaitAction = dyn FnOnce(*const (), &mut UninterruptibleSpinlockGuard<FutureWaitGeneric>) + Send;
+type FutureWaitAction = dyn FnOnce(*const (), &mut FutureWaitGenericLock) + Send;
 
-struct FutureWaitGeneric {
+struct FutureWaitGenericState {
     wait_refs: usize,
     val_refs: usize,
     resolved: bool,
-    actions: Vec<Box<FutureWaitAction>>,
+    actions: Vec<Box<FutureWaitAction>>
+}
+
+struct FutureWaitGeneric {
+    state: UninterruptibleSpinlock<FutureWaitGenericState>,
     wait: ThreadWaitList
 }
 
+impl FutureWaitGeneric {
+    pub fn lock(&self) -> FutureWaitGenericLock {
+        FutureWaitGenericLock {
+            state: self.state.lock(),
+            wait: &self.wait
+        }
+    }
+}
+
+struct FutureWaitGenericLock<'a> {
+    state: UninterruptibleSpinlockGuard<'a, FutureWaitGenericState>,
+    wait: &'a ThreadWaitList
+}
+
+impl<'a> FutureWaitGenericLock<'a> {
+    pub fn wait(self) {
+        let FutureWaitGenericLock { state, wait } = self;
+
+        assert!(!state.resolved);
+
+        let wait = wait.wait();
+        drop(state);
+        wait.suspend();
+    }
+}
+
 pub struct FutureWait<T> {
-    generic: UninterruptibleSpinlock<FutureWaitGeneric>,
+    generic: FutureWaitGeneric,
     val: UnsafeCell<MaybeUninit<T>>
 }
 
@@ -40,7 +69,7 @@ struct FutureWaitFreer {
 #[derive(Debug)]
 enum FutureInternal<T> {
     Waiting(*const FutureWait<T>, PhantomData<FutureWait<T>>),
-    WaitingNoVal(*const UninterruptibleSpinlock<FutureWaitGeneric>, FutureWaitFreer),
+    WaitingNoVal(*const FutureWaitGeneric, FutureWaitFreer),
     Done(T)
 }
 
@@ -65,13 +94,15 @@ impl<T> Future<T> {
     /// Creates a new unresolved [`Future`] that can be fulfilled using the provided [`FutureWriter`].
     pub fn new() -> (Future<T>, FutureWriter<T>) {
         let wait = Box::leak(Box::new(FutureWait {
-            generic: UninterruptibleSpinlock::new(FutureWaitGeneric {
-                wait_refs: 2,
-                val_refs: 1,
-                resolved: false,
-                actions: vec![],
+            generic: FutureWaitGeneric {
+                state: UninterruptibleSpinlock::new(FutureWaitGenericState {
+                    wait_refs: 2,
+                    val_refs: 1,
+                    resolved: false,
+                    actions: vec![]
+                }),
                 wait: ThreadWaitList::new()
-            }),
+            },
             val: UnsafeCell::new(MaybeUninit::uninit())
         }));
 
@@ -87,22 +118,22 @@ impl<T> Future<T> {
         Future(FutureInternal::Done(val))
     }
 
-    fn do_action<U>(&mut self, f: impl FnOnce(Result<&mut T, UninterruptibleSpinlockGuard<FutureWaitGeneric>>) -> U) -> U {
+    fn do_action<U>(&mut self, f: impl FnOnce(Result<&mut T, FutureWaitGenericLock>) -> U) -> U {
         let result = match self.0 {
             FutureInternal::Waiting(ptr, _) => unsafe {
                 let mut wait = (*ptr).generic.lock();
 
-                if wait.resolved {
-                    wait.wait_refs -= 1;
-                    wait.val_refs -= 1;
+                if wait.state.resolved {
+                    wait.state.wait_refs -= 1;
+                    wait.state.val_refs -= 1;
 
-                    let val = if wait.val_refs == 0 {
+                    let val = if wait.state.val_refs == 0 {
                         ptr::read((*(*ptr).val.get()).as_ptr())
                     } else {
                         crate::util::clone_or_panic(&*(*(*ptr).val.get()).as_ptr())
                     };
 
-                    if wait.wait_refs == 0 {
+                    if wait.state.wait_refs == 0 {
                         mem::drop(wait);
                         Box::from_raw(ptr as *mut FutureWait<T>);
                     }
@@ -116,10 +147,10 @@ impl<T> Future<T> {
             FutureInternal::WaitingNoVal(ptr, ref freer) => unsafe {
                 let mut wait = (*ptr).lock();
 
-                if wait.resolved {
-                    wait.wait_refs -= 1;
+                if wait.state.resolved {
+                    wait.state.wait_refs -= 1;
 
-                    if wait.wait_refs == 0 {
+                    if wait.state.wait_refs == 0 {
                         mem::drop(wait);
                         (freer.free_fn)(freer.ptr);
                     }
@@ -155,10 +186,7 @@ impl<T> Future<T> {
             let done = self.do_action(|state| match state {
                 Ok(_) => true,
                 Err(wait) => {
-                    let suspend = unsafe { Pin::new_unchecked(&wait.wait) }.wait();
-                    mem::drop(wait);
-                    suspend.suspend();
-
+                    wait.wait();
                     false
                 }
             });
@@ -250,7 +278,7 @@ impl<T> Future<T> {
                 f(val);
             },
             Err(mut wait) => {
-                wait.actions.push(Box::new(|ptr, _| unsafe { f(&*(ptr as *const T)) }));
+                wait.state.actions.push(Box::new(|ptr, _| unsafe { f(&*(ptr as *const T)) }));
             }
         })
     }
@@ -262,10 +290,10 @@ impl<T> Future<T> {
             FutureInternal::Waiting(ptr, _) => unsafe {
                 let mut lock = (*ptr).generic.lock();
 
-                if lock.resolved {
+                if lock.state.resolved {
                     Future::done(())
                 } else {
-                    lock.wait_refs += 1;
+                    lock.state.wait_refs += 1;
                     Future(FutureInternal::WaitingNoVal(&(*ptr).generic as *const _, FutureWaitFreer {
                         ptr: ptr as *const (),
                         free_fn: |ptr| {
@@ -280,9 +308,9 @@ impl<T> Future<T> {
         }
     }
 
-    unsafe fn dec_wait_ref(ptr: *const FutureWait<T>, mut wait: UninterruptibleSpinlockGuard<FutureWaitGeneric>) {
-        wait.wait_refs -= 1;
-        if wait.wait_refs != 0 {
+    unsafe fn dec_wait_ref(ptr: *const FutureWait<T>, mut wait: FutureWaitGenericLock) {
+        wait.state.wait_refs -= 1;
+        if wait.state.wait_refs != 0 {
             wait.wait.wake_all();
         } else {
             mem::drop(wait);
@@ -343,13 +371,13 @@ impl Future<()> {
             was_empty = false;
 
             unsafe {
-                (*wait.unwrap()).generic.lock().wait_refs += 1;
+                (*wait.unwrap()).generic.lock().state.wait_refs += 1;
             }
 
             f.when_resolved(move |_| unsafe {
                 let wait_generic = (*wait.unwrap()).generic.lock();
 
-                if !wait_generic.resolved {
+                if !wait_generic.state.resolved {
                     *(*wait.unwrap()).val.get() = MaybeUninit::new(i);
                     FutureWriter::finish_internal(wait.unwrap(), wait_generic);
                 } else {
@@ -359,7 +387,7 @@ impl Future<()> {
         }
 
         unsafe {
-            (*wait.unwrap()).generic.lock().wait_refs -= 1;
+            (*wait.unwrap()).generic.lock().state.wait_refs -= 1;
         }
 
         if !was_empty {
@@ -376,15 +404,15 @@ impl<T: Clone> Clone for Future<T> {
             FutureInternal::Waiting(ptr, _) => unsafe {
                 let mut lock = (*ptr).generic.lock();
 
-                lock.wait_refs += 1;
-                lock.val_refs += 1;
+                lock.state.wait_refs += 1;
+                lock.state.val_refs += 1;
 
                 Future(FutureInternal::Waiting(ptr, PhantomData))
             },
             FutureInternal::WaitingNoVal(ptr, ref freer) => unsafe {
                 let mut lock = (*ptr).lock();
 
-                lock.wait_refs += 1;
+                lock.state.wait_refs += 1;
 
                 Future(FutureInternal::WaitingNoVal(ptr, freer.clone()))
             },
@@ -399,8 +427,8 @@ impl<T> Drop for Future<T> {
             FutureInternal::Waiting(ptr, _) if !ptr.is_null() => unsafe {
                 let mut wait = (*ptr).generic.lock();
 
-                wait.val_refs -= 1;
-                if wait.val_refs == 0 && wait.resolved {
+                wait.state.val_refs -= 1;
+                if wait.state.val_refs == 0 && wait.state.resolved {
                     ptr::read((*(*ptr).val.get()).as_ptr());
                 };
 
@@ -425,18 +453,18 @@ pub struct FutureWriter<T> {
 }
 
 impl<T> FutureWriter<T> {
-    unsafe fn finish_internal(ptr: *const FutureWait<T>, mut wait: UninterruptibleSpinlockGuard<FutureWaitGeneric>) {
+    unsafe fn finish_internal(ptr: *const FutureWait<T>, mut wait: FutureWaitGenericLock) {
         let val_ptr = (*ptr).val.get();
-        wait.resolved = true;
+        wait.state.resolved = true;
 
-        let actions = mem::take(&mut wait.actions);
+        let actions = mem::take(&mut wait.state.actions);
         if !actions.is_empty() {
             for a in actions.into_iter() {
                 a(val_ptr as *const (), &mut wait);
             }
         }
 
-        if wait.val_refs == 0 {
+        if wait.state.val_refs == 0 {
             ptr::read((*val_ptr).as_ptr());
         }
 

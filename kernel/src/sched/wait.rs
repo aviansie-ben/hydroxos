@@ -1,6 +1,7 @@
 //! Low-level synchronization primitives for inter-thread synchronization.
 
 use alloc::sync::Arc;
+use core::marker::PhantomData;
 use core::mem::{ManuallyDrop, MaybeUninit};
 use core::pin::Pin;
 use core::ptr;
@@ -86,9 +87,9 @@ impl ThreadWaitListInternal {
 /// Causing a value of this type to be dropped without running [`ThreadWait::suspend`] will cause a panic. This is because releasing the
 /// spinlock on the current thread after adding the thread to a wait list but before its state has been saved can cause undefined behaviour
 /// due to other cores seeing inconsistent state information in the thread.
-pub struct ThreadWait(MaybeUninit<ThreadLock<'static>>);
+pub struct ThreadWait<'a>(MaybeUninit<ThreadLock<'static>>, PhantomData<&'a ThreadWaitList>);
 
-impl ThreadWait {
+impl<'a> ThreadWait<'a> {
     /// Suspends the current thread and consumes this guard.
     ///
     /// # Panics
@@ -105,7 +106,7 @@ impl ThreadWait {
     }
 }
 
-impl Drop for ThreadWait {
+impl<'a> Drop for ThreadWait<'a> {
     fn drop(&mut self) {
         panic!("Missing call to ThreadWait::suspend after calling ThreadWaitList::wait");
     }
@@ -143,7 +144,7 @@ impl ThreadWaitList {
     /// This method cannot suspend a thread from the context of an asynchronous hardware interrupt and will panic if it is called from an
     /// asynchronous interrupt handler.
     #[must_use]
-    pub fn wait(self: Pin<&Self>) -> ThreadWait {
+    pub fn wait(&self) -> ThreadWait {
         unsafe {
             // SAFETY: This thread reference never leaves the current thread. Since this references the current thread, it must continue to
             //         exist while this thread is still executing, so extending its lifetime like this is safe.
@@ -158,7 +159,7 @@ impl ThreadWaitList {
             //         is never unlocked and the improper state updates can never be observed. Obviously, this is undesirable but does not
             //         have any implications for safety guarantees.
             internal.enqueue(thread.thread().as_arc());
-            ThreadWait(MaybeUninit::new(thread))
+            ThreadWait(MaybeUninit::new(thread), PhantomData)
         }
     }
 
