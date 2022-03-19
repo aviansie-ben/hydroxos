@@ -242,6 +242,7 @@ mod test {
 
     use super::super::task::{Process, Thread};
     use super::*;
+    use crate::test_util::TEST_THREAD_STACK_SIZE;
 
     #[test_case]
     fn test_wake_one() {
@@ -253,7 +254,11 @@ mod test {
             flag.store(true, Ordering::Relaxed);
         };
 
-        let thread = unsafe { Process::kernel().lock().create_kernel_thread_unchecked(thread_fn, 4096) };
+        let thread = unsafe {
+            Process::kernel()
+                .lock()
+                .create_kernel_thread_unchecked(thread_fn, TEST_THREAD_STACK_SIZE)
+        };
         thread.lock().wake();
 
         Thread::yield_current();
@@ -274,7 +279,11 @@ mod test {
             waitlist.as_ref().wait().suspend();
             val.store(1, Ordering::Relaxed);
         };
-        let thread_1 = unsafe { Process::kernel().lock().create_kernel_thread_unchecked(thread_fn_1, 4096) };
+        let thread_1 = unsafe {
+            Process::kernel()
+                .lock()
+                .create_kernel_thread_unchecked(thread_fn_1, TEST_THREAD_STACK_SIZE)
+        };
         thread_1.lock().wake();
         Thread::yield_current();
 
@@ -282,7 +291,11 @@ mod test {
             waitlist.as_ref().wait().suspend();
             val.store(2, Ordering::Relaxed);
         };
-        let thread_2 = unsafe { Process::kernel().lock().create_kernel_thread_unchecked(thread_fn_2, 4096) };
+        let thread_2 = unsafe {
+            Process::kernel()
+                .lock()
+                .create_kernel_thread_unchecked(thread_fn_2, TEST_THREAD_STACK_SIZE)
+        };
         thread_2.lock().wake();
         Thread::yield_current();
 
@@ -308,7 +321,11 @@ mod test {
             waitlist.as_ref().wait().suspend();
             val.fetch_add(1, Ordering::Relaxed);
         };
-        let thread_1 = unsafe { Process::kernel().lock().create_kernel_thread_unchecked(thread_fn_1, 4096) };
+        let thread_1 = unsafe {
+            Process::kernel()
+                .lock()
+                .create_kernel_thread_unchecked(thread_fn_1, TEST_THREAD_STACK_SIZE)
+        };
         thread_1.lock().wake();
         Thread::yield_current();
 
@@ -316,7 +333,11 @@ mod test {
             waitlist.as_ref().wait().suspend();
             val.fetch_add(1, Ordering::Relaxed);
         };
-        let thread_2 = unsafe { Process::kernel().lock().create_kernel_thread_unchecked(thread_fn_2, 4096) };
+        let thread_2 = unsafe {
+            Process::kernel()
+                .lock()
+                .create_kernel_thread_unchecked(thread_fn_2, TEST_THREAD_STACK_SIZE)
+        };
         thread_2.lock().wake();
         Thread::yield_current();
 

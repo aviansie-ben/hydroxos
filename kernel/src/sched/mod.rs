@@ -102,6 +102,7 @@ mod test {
     use core::sync::atomic::{AtomicBool, Ordering};
 
     use super::task::*;
+    use crate::test_util::TEST_THREAD_STACK_SIZE;
 
     #[test_case]
     fn test_thread_basics() {
@@ -114,7 +115,11 @@ mod test {
             flag.store(true, Ordering::Relaxed);
         };
 
-        let thread = unsafe { Process::kernel().lock().create_kernel_thread_unchecked(thread_fn, 4096) };
+        let thread = unsafe {
+            Process::kernel()
+                .lock()
+                .create_kernel_thread_unchecked(thread_fn, TEST_THREAD_STACK_SIZE)
+        };
         thread.lock().wake();
 
         Thread::yield_current();

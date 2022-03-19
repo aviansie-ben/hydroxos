@@ -9,6 +9,8 @@ use crate::sched::task::{Process, Thread};
 use crate::sync::uninterruptible::InterruptDisabler;
 use crate::sync::UninterruptibleSpinlock;
 
+pub const TEST_THREAD_STACK_SIZE: usize = 16 * 4096;
+
 pub static TEST_SERIAL: UninterruptibleSpinlock<SerialPort> = UninterruptibleSpinlock::new(unsafe { SerialPort::new(0x3f8) });
 static IS_SKIPPED: AtomicBool = AtomicBool::new(false);
 static IS_TESTING: AtomicBool = AtomicBool::new(false);
@@ -46,7 +48,7 @@ pub fn run_tests(tests: &'static [&dyn Test]) -> ! {
 
         let test_thread = Process::kernel()
             .lock()
-            .create_kernel_thread(move || run_tests_thread(tests), 64 * 1024);
+            .create_kernel_thread(move || run_tests_thread(tests), TEST_THREAD_STACK_SIZE);
         let test_thread_complete = test_thread.lock().join();
 
         test_thread.lock().wake();
