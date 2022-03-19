@@ -1,10 +1,12 @@
+use alloc::sync::Arc;
 use core::fmt::Write;
-use core::mem;
 use core::panic::PanicInfo;
-use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
+use core::{mem, ptr};
 
 use uart_16550::SerialPort;
 
+use crate::sched::is_handling_interrupt;
 use crate::sched::task::{Process, Thread};
 use crate::sync::uninterruptible::InterruptDisabler;
 use crate::sync::UninterruptibleSpinlock;
@@ -16,6 +18,7 @@ static IS_SKIPPED: AtomicBool = AtomicBool::new(false);
 static IS_TESTING: AtomicBool = AtomicBool::new(false);
 static TEST_FAILED: AtomicBool = AtomicBool::new(false);
 static TEST_IDX: AtomicUsize = AtomicUsize::new(0);
+static TEST_THREAD: AtomicPtr<Thread> = AtomicPtr::new(ptr::null_mut());
 
 pub trait Test: Sync {
     fn run(&self);
@@ -50,6 +53,8 @@ pub fn run_tests(tests: &'static [&dyn Test]) -> ! {
             .lock()
             .create_kernel_thread(move || run_tests_thread(tests), TEST_THREAD_STACK_SIZE);
         let test_thread_complete = test_thread.lock().join();
+
+        TEST_THREAD.store(&*test_thread as *const _ as *mut _, Ordering::Relaxed);
 
         test_thread.lock().wake();
         test_thread_complete.unwrap_blocking();
@@ -95,7 +100,16 @@ pub fn handle_test_panic(info: &PanicInfo) -> ! {
     let _ = writeln!(serial_lock, "{}", info);
 
     if is_testing {
-        if InterruptDisabler::num_held() > 1 {
+        if is_handling_interrupt() {
+            let _ = writeln!(serial_lock, "Unable to continue testing, since panic occurred during an interrupt");
+            exit(1);
+        } else if !ptr::eq(&*Thread::current(), TEST_THREAD.load(Ordering::Relaxed)) {
+            let _ = writeln!(
+                serial_lock,
+                "Unable to continue testing, since panic didn't occur on the test thread"
+            );
+            exit(1);
+        } else if InterruptDisabler::num_held() > 1 {
             let _ = writeln!(serial_lock, "Unable to continue testing due to live InterruptDisabler");
             exit(1);
         } else if !TEST_FAILED.swap(true, Ordering::Relaxed) {
