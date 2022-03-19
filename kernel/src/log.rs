@@ -60,7 +60,7 @@ macro_rules! log {
     ($lvl:ident, $module:expr, $msg:expr $(, $($arg:expr),*)?) => {
         let lvl = $crate::log::LogLevel::$lvl;
         $crate::log::log_msg(::alloc::format!(
-            concat!("[\x1b[{}m{}\x1b[97m] {}: ", $msg, "\n"),
+            concat!("[\x1b[{}m{}\x1b[0m] {}: ", $msg, "\n"),
             $crate::io::ansi::AnsiParserSgrAction::SetFgColor(lvl.color()),
             lvl.name(),
             $module,

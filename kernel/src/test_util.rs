@@ -1,4 +1,3 @@
-use alloc::sync::Arc;
 use core::fmt::Write;
 use core::panic::PanicInfo;
 use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
@@ -6,19 +5,48 @@ use core::{mem, ptr};
 
 use uart_16550::SerialPort;
 
+use crate::io::tty::Tty;
 use crate::sched::is_handling_interrupt;
 use crate::sched::task::{Process, Thread};
 use crate::sync::uninterruptible::InterruptDisabler;
-use crate::sync::UninterruptibleSpinlock;
+use crate::sync::{Future, UninterruptibleSpinlock};
 
 pub const TEST_THREAD_STACK_SIZE: usize = 16 * 4096;
 
 pub static TEST_SERIAL: UninterruptibleSpinlock<SerialPort> = UninterruptibleSpinlock::new(unsafe { SerialPort::new(0x3f8) });
+
+static TEST_LOG_PRINTED_NEWLINE: AtomicBool = AtomicBool::new(false);
 static IS_SKIPPED: AtomicBool = AtomicBool::new(false);
 static IS_TESTING: AtomicBool = AtomicBool::new(false);
 static TEST_FAILED: AtomicBool = AtomicBool::new(false);
 static TEST_IDX: AtomicUsize = AtomicUsize::new(0);
 static TEST_THREAD: AtomicPtr<Thread> = AtomicPtr::new(ptr::null_mut());
+
+pub struct TestLogTty;
+
+impl Tty for TestLogTty {
+    unsafe fn write(&self, bytes: *const [u8]) -> Future<Result<(), ()>> {
+        let mut serial_lock = TEST_SERIAL.lock();
+
+        if IS_TESTING.load(Ordering::Relaxed) && !TEST_LOG_PRINTED_NEWLINE.swap(true, Ordering::Relaxed) {
+            serial_lock.send_raw(b'\n');
+        }
+
+        for &b in bytes.as_ref().unwrap() {
+            serial_lock.send_raw(b);
+        }
+
+        Future::done(Ok(()))
+    }
+
+    unsafe fn flush(&self) -> Future<Result<(), ()>> {
+        Future::done(Ok(()))
+    }
+
+    unsafe fn read(&self, _bytes: *mut [u8]) -> Future<Result<usize, ()>> {
+        Future::done(Err(()))
+    }
+}
 
 pub trait Test: Sync {
     fn run(&self);
@@ -27,6 +55,7 @@ pub trait Test: Sync {
 impl<T: Fn() + Sync> Test for T {
     fn run(&self) {
         write!(TEST_SERIAL.lock(), "test {} ... ", core::any::type_name::<T>()).unwrap();
+        TEST_LOG_PRINTED_NEWLINE.store(false, Ordering::Relaxed);
         IS_SKIPPED.store(false, Ordering::Relaxed);
         IS_TESTING.store(true, Ordering::Relaxed);
         self();
@@ -38,8 +67,16 @@ impl<T: Fn() + Sync> Test for T {
     }
 }
 
-pub fn run_tests(tests: &'static [&dyn Test]) -> ! {
+pub fn init_test_log() {
+    use alloc::sync::Arc;
+
+    use crate::log;
+
     TEST_SERIAL.lock().init();
+    log::init(Arc::new(TestLogTty));
+}
+
+pub fn run_tests(tests: &'static [&dyn Test]) -> ! {
     writeln!(TEST_SERIAL.lock(), "Running {} tests...", tests.len()).unwrap();
 
     loop {

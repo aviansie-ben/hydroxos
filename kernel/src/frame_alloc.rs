@@ -8,6 +8,7 @@ use bootloader::BootInfo;
 use crate::arch::page::{get_phys_mem_addr, get_phys_mem_ptr_mut, PAGE_SIZE};
 use crate::arch::PhysAddr;
 use crate::sync::uninterruptible::{UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
+use crate::util::SharedUnsafeCell;
 
 const NUM_FRAMES_PER_PAGE: usize = PAGE_SIZE / core::mem::size_of::<PhysAddr>();
 
@@ -217,7 +218,9 @@ fn is_usable(region_ty: MemoryRegionType) -> bool {
     }
 }
 
-pub(crate) unsafe fn init(boot_info: &BootInfo) -> usize {
+static NUM_TOTAL_FRAMES: SharedUnsafeCell<usize> = SharedUnsafeCell::new(0);
+
+pub(crate) unsafe fn init(boot_info: &BootInfo) {
     let mut num_frames = 0;
     let mut frame_alloc = get_allocator().lock();
 
@@ -233,7 +236,11 @@ pub(crate) unsafe fn init(boot_info: &BootInfo) -> usize {
         };
     }
 
-    num_frames.try_into().unwrap()
+    *NUM_TOTAL_FRAMES.get() = usize::try_from(num_frames).expect("Too many frames to fit in usize");
+}
+
+pub fn num_total_frames() -> usize {
+    unsafe { *NUM_TOTAL_FRAMES.get() }
 }
 
 #[cfg(test)]
