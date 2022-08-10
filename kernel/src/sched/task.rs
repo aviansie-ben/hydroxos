@@ -7,7 +7,7 @@ use core::cell::UnsafeCell;
 use core::fmt;
 use core::fmt::Formatter;
 use core::marker::PhantomData;
-use core::mem::{self, MaybeUninit};
+use core::mem::MaybeUninit;
 use core::pin::Pin;
 use core::ptr;
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -279,7 +279,7 @@ impl<'a> ProcessLock<'a> {
         debug_assert!((*thread_lock.thread.process_internal.get()).next_ready.is_null());
         debug_assert!(!ptr::eq(self.guard.ready_tail, thread));
 
-        mem::drop(thread_lock);
+        drop(thread_lock);
 
         let process_internal = &mut *thread.process_internal.get();
 
@@ -499,7 +499,7 @@ impl Thread {
         *thread_lock.state_mut() = ThreadState::Dead;
         process_lock.remove_thread(&thread);
 
-        mem::drop(process_lock);
+        drop(process_lock);
 
         thread_lock.guard.join_writer.take().unwrap().finish(());
 

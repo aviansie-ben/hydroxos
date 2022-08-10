@@ -4,7 +4,6 @@
 //! facilitating context switching between them from interrupt handlers.
 
 use core::cell::UnsafeCell;
-use core::mem;
 
 use crate::arch::interrupt::InterruptFrame;
 
@@ -67,7 +66,7 @@ pub unsafe fn perform_context_switch_interrupt(old_thread_lock: Option<task::Thr
                 let old_thread = old_thread_lock.thread();
                 let old_process = old_thread.process().upgrade().unwrap();
 
-                mem::drop(old_thread_lock);
+                drop(old_thread_lock);
                 let mut old_process_lock = old_process.lock();
                 let old_thread_lock = old_thread.lock();
 

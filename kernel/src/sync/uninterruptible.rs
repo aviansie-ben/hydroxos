@@ -376,7 +376,7 @@ mod test {
                     unsafe { &(*HELD_LOCKS.get())[..HELD_LOCKS_LEN.get()] }
                 );
 
-                mem::drop(lock2_guard);
+                drop(lock2_guard);
 
                 assert_eq!(
                     &[
@@ -386,7 +386,7 @@ mod test {
                     unsafe { &(*HELD_LOCKS.get())[..HELD_LOCKS_LEN.get()] }
                 );
 
-                mem::drop(lock3_guard);
+                drop(lock3_guard);
 
                 assert_eq!(
                     &[
@@ -395,7 +395,7 @@ mod test {
                     unsafe { &(*HELD_LOCKS.get())[..HELD_LOCKS_LEN.get()] }
                 );
 
-                mem::drop(lock1_guard);
+                drop(lock1_guard);
 
                 assert_eq!(
                     &[] as &[*const ()],

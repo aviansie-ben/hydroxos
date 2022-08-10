@@ -134,7 +134,7 @@ impl<T> Future<T> {
                     };
 
                     if wait.state.wait_refs == 0 {
-                        mem::drop(wait);
+                        drop(wait);
                         Box::from_raw(ptr as *mut FutureWait<T>);
                     }
 
@@ -151,7 +151,7 @@ impl<T> Future<T> {
                     wait.state.wait_refs -= 1;
 
                     if wait.state.wait_refs == 0 {
-                        mem::drop(wait);
+                        drop(wait);
                         (freer.free_fn)(freer.ptr);
                     }
 
@@ -313,7 +313,7 @@ impl<T> Future<T> {
         if wait.state.wait_refs != 0 {
             wait.wait.wake_all();
         } else {
-            mem::drop(wait);
+            drop(wait);
             Box::from_raw(ptr as *mut FutureWait<T>);
         }
     }

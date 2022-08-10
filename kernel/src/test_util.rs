@@ -1,7 +1,7 @@
 use core::fmt::Write;
 use core::panic::PanicInfo;
 use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
-use core::{mem, ptr};
+use core::ptr;
 
 use uart_16550::SerialPort;
 
@@ -156,7 +156,7 @@ pub fn handle_test_panic(info: &PanicInfo) -> ! {
             );
         }
 
-        mem::drop(serial_lock);
+        drop(serial_lock);
         unsafe {
             Thread::kill_current();
         }
