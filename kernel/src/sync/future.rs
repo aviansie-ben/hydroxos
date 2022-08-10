@@ -135,7 +135,7 @@ impl<T> Future<T> {
 
                     if wait.state.wait_refs == 0 {
                         drop(wait);
-                        Box::from_raw(ptr as *mut FutureWait<T>);
+                        drop(Box::from_raw(ptr as *mut FutureWait<T>));
                     }
 
                     self.0 = FutureInternal::Done(val);
@@ -297,7 +297,7 @@ impl<T> Future<T> {
                     Future(FutureInternal::WaitingNoVal(&(*ptr).generic as *const _, FutureWaitFreer {
                         ptr: ptr as *const (),
                         free_fn: |ptr| {
-                            Box::from_raw(ptr as *mut FutureWait<T>);
+                            drop(Box::from_raw(ptr as *mut FutureWait<T>));
                         },
                         _data: PhantomData
                     }))
@@ -314,7 +314,7 @@ impl<T> Future<T> {
             wait.wait.wake_all();
         } else {
             drop(wait);
-            Box::from_raw(ptr as *mut FutureWait<T>);
+            drop(Box::from_raw(ptr as *mut FutureWait<T>));
         }
     }
 }
