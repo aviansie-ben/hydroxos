@@ -169,7 +169,7 @@ cfg_if::cfg_if! {
 
 /// A spinlock that keeps interrupts disabled on the local CPU core while it is locked.
 #[derive(Debug)]
-pub struct UninterruptibleSpinlock<T>(spin::Mutex<T>);
+pub struct UninterruptibleSpinlock<T: ?Sized>(spin::Mutex<T>);
 
 impl<T> UninterruptibleSpinlock<T> {
     /// Creates a new uninterruptible spinlock containing the provided value.
@@ -177,13 +177,15 @@ impl<T> UninterruptibleSpinlock<T> {
         UninterruptibleSpinlock(spin::Mutex::new(val))
     }
 
-    pub fn get_mut(&mut self) -> &mut T {
-        self.0.get_mut()
-    }
-
     /// Consumes this [`UninterruptibleSpinlock`], returning the underlying data.
     pub fn into_inner(self) -> T {
         self.0.into_inner()
+    }
+}
+
+impl<T: ?Sized> UninterruptibleSpinlock<T> {
+    pub fn get_mut(&mut self) -> &mut T {
+        self.0.get_mut()
     }
 
     /// Checks whether this [`UninterruptibleSpinlock`] is currently locked.
@@ -242,9 +244,9 @@ impl<T> UninterruptibleSpinlock<T> {
 
 /// A guard that provides access to an [`UninterruptibleSpinlock`]'s internals. Releases the spinlock (and re-enables interrupts if
 /// applicable) when dropped.
-pub struct UninterruptibleSpinlockGuard<'a, T>(spin::MutexGuard<'a, T>, InterruptDisabler, SpinlockTracker);
+pub struct UninterruptibleSpinlockGuard<'a, T: ?Sized>(spin::MutexGuard<'a, T>, InterruptDisabler, SpinlockTracker);
 
-impl<'a, T> Deref for UninterruptibleSpinlockGuard<'a, T> {
+impl<'a, T: ?Sized> Deref for UninterruptibleSpinlockGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -252,7 +254,7 @@ impl<'a, T> Deref for UninterruptibleSpinlockGuard<'a, T> {
     }
 }
 
-impl<'a, T> DerefMut for UninterruptibleSpinlockGuard<'a, T> {
+impl<'a, T: ?Sized> DerefMut for UninterruptibleSpinlockGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.0.deref_mut()
     }
