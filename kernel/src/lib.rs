@@ -8,6 +8,7 @@
 #![feature(exclusive_range_pattern)]
 #![feature(naked_functions)]
 #![feature(negative_impls)]
+#![feature(ptr_metadata)]
 #![feature(slice_ptr_len)]
 #![feature(thread_local)]
 #![allow(incomplete_features)]
@@ -47,6 +48,7 @@ pub unsafe fn init_phase_1(boot_info: &'static BootInfo) {
 pub unsafe fn init_phase_2() {
     use crate::arch::page::PAGE_SIZE;
     use crate::frame_alloc::FrameAllocator;
+    use crate::io::dev::log_device_tree;
 
     log!(Info, "kernel", "Booting HydroxOS v{}", env!("CARGO_PKG_VERSION"));
     log!(
@@ -59,6 +61,8 @@ pub unsafe fn init_phase_2() {
 
     arch::init_phase_2();
     sched::init();
+
+    log_device_tree();
 }
 
 #[cfg(test)]

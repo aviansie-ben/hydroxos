@@ -1,7 +1,7 @@
 use core::fmt::Write;
 use core::panic::PanicInfo;
-use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
 use core::ptr;
+use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
 
 use uart_16550::SerialPort;
 

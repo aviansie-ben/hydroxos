@@ -1,9 +1,13 @@
 use core::fmt;
 
+use dyn_dyn::dyn_dyn_derived;
 use x86_64::instructions::port::Port;
 
+use crate::arch::page;
+use crate::arch::PhysAddr;
 use crate::io::ansi::AnsiColor;
-use crate::io::vt::{VTChar, VirtualTerminalDisplay, VirtualTerminalInternals};
+use crate::io::dev::Device;
+use crate::io::vt::{TerminalDisplay, VTChar, VirtualTerminalInternals};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -66,19 +70,24 @@ struct ScreenChar {
     color: ColorCode
 }
 
-pub struct TextBuffer {
+#[derive(Debug)]
+pub struct VgaTextBuffer {
     buf: *mut ScreenChar,
     width: usize,
     height: usize
 }
 
-impl TextBuffer {
-    pub unsafe fn new(buf: *mut u8, width: usize, height: usize) -> TextBuffer {
-        TextBuffer {
+impl VgaTextBuffer {
+    pub unsafe fn new(buf: *mut u8, width: usize, height: usize) -> VgaTextBuffer {
+        VgaTextBuffer {
             buf: buf as *mut ScreenChar,
             width,
             height
         }
+    }
+
+    pub unsafe fn for_primary_display() -> VgaTextBuffer {
+        VgaTextBuffer::new(page::get_phys_mem_ptr_mut(PhysAddr::new(0xb8000)), 80, 25)
     }
 
     pub fn size(&self) -> (usize, usize) {
@@ -149,9 +158,10 @@ impl TextBuffer {
     }
 }
 
-unsafe impl Send for TextBuffer {}
+unsafe impl Send for VgaTextBuffer {}
+unsafe impl Sync for VgaTextBuffer {}
 
-impl VirtualTerminalDisplay for TextBuffer {
+impl TerminalDisplay for VgaTextBuffer {
     fn size(&self) -> (usize, usize) {
         (self.width, self.height)
     }
@@ -182,16 +192,19 @@ impl VirtualTerminalDisplay for TextBuffer {
     }
 }
 
+#[dyn_dyn_derived(TerminalDisplay)]
+impl Device for VgaTextBuffer {}
+
 pub struct Writer<'a> {
     x: usize,
     y: usize,
     fg_color: Color,
     bg_color: Color,
-    buf: &'a mut TextBuffer
+    buf: &'a mut VgaTextBuffer
 }
 
 impl<'a> Writer<'a> {
-    pub fn new(buf: &'a mut TextBuffer) -> Self {
+    pub fn new(buf: &'a mut VgaTextBuffer) -> Self {
         Writer {
             x: 0,
             y: 0,

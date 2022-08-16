@@ -3,7 +3,10 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::iter::FromIterator;
 
+use dyn_dyn::dyn_dyn_cast;
+
 use crate::io::ansi::{AnsiColor, AnsiParser, AnsiParserAction, AnsiParserSgrAction};
+use crate::io::dev::{Device, DeviceRef};
 use crate::io::tty::Tty;
 use crate::sync::{Future, UninterruptibleSpinlock};
 
@@ -154,7 +157,9 @@ impl VirtualTerminalInternals {
         VIRTUAL_DISPLAYS.with_lock(|virtual_displays| {
             for &mut (ref mut display, vt_id) in virtual_displays.iter_mut() {
                 if vt_id == self.id {
-                    display.redraw(self);
+                    dyn_dyn_cast!(mut Device => TerminalDisplay, &mut display.lock())
+                        .unwrap()
+                        .redraw(self);
                 };
             }
         });
@@ -213,19 +218,19 @@ impl VirtualTerminal {
     }
 }
 
-pub trait VirtualTerminalDisplay: Send {
+pub trait TerminalDisplay: Send {
     fn size(&self) -> (usize, usize);
     fn clear(&mut self);
     fn redraw(&mut self, vt: &VirtualTerminalInternals);
 }
 
 static VIRTUAL_TERMINALS: UninterruptibleSpinlock<Vec<Arc<VirtualTerminal>>> = UninterruptibleSpinlock::new(Vec::new());
-static VIRTUAL_DISPLAYS: UninterruptibleSpinlock<Vec<(Box<dyn VirtualTerminalDisplay>, usize)>> = UninterruptibleSpinlock::new(Vec::new());
+static VIRTUAL_DISPLAYS: UninterruptibleSpinlock<Vec<(DeviceRef<dyn Device>, usize)>> = UninterruptibleSpinlock::new(Vec::new());
 
-pub fn init(primary_display: Box<dyn VirtualTerminalDisplay>, num_terminals: usize) {
+pub fn init(primary_display: DeviceRef<dyn Device>, num_terminals: usize) {
     assert!(num_terminals > 0);
 
-    let (width, height) = primary_display.size();
+    let (width, height) = dyn_dyn_cast!(Device => TerminalDisplay, &primary_display.lock()).unwrap().size();
 
     VIRTUAL_DISPLAYS.with_lock(|virtual_displays| {
         assert!(virtual_displays.is_empty());
@@ -243,7 +248,9 @@ pub fn init(primary_display: Box<dyn VirtualTerminalDisplay>, num_terminals: usi
 
         virtual_terminals[0].0.with_lock(|vt| {
             VIRTUAL_DISPLAYS.with_lock(|virtual_displays| {
-                virtual_displays[0].0.redraw(vt);
+                dyn_dyn_cast!(mut Device => TerminalDisplay, &mut virtual_displays[0].0.lock())
+                    .unwrap()
+                    .redraw(vt);
             });
         });
     });
@@ -260,7 +267,9 @@ pub fn switch_display(display_id: usize, terminal_id: usize) -> bool {
                 VIRTUAL_DISPLAYS.with_lock(|virtual_displays| {
                     if display_id < virtual_displays.len() {
                         virtual_displays[display_id].1 = terminal_id;
-                        virtual_displays[display_id].0.redraw(vt);
+                        dyn_dyn_cast!(mut Device => TerminalDisplay, &mut virtual_displays[display_id].0.lock())
+                            .unwrap()
+                            .redraw(vt);
                         true
                     } else {
                         false

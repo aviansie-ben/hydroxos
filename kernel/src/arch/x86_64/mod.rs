@@ -5,7 +5,8 @@ use core::ptr;
 use bootloader::BootInfo;
 pub use x86_64::{PhysAddr, VirtAddr};
 
-use crate::io::vt::VirtualTerminalDisplay;
+use crate::arch::dev::vgabuf::VgaTextBuffer;
+use crate::io::dev::DeviceLock;
 use crate::util::SharedUnsafeCell;
 
 pub mod cpuid;
@@ -17,12 +18,6 @@ pub mod pic;
 pub mod regs;
 
 static KERNEL_FS_BASE: SharedUnsafeCell<u64> = SharedUnsafeCell::new(0);
-
-unsafe fn create_primary_display() -> Box<dyn VirtualTerminalDisplay> {
-    use self::dev::vgabuf::TextBuffer;
-
-    Box::new(TextBuffer::new(page::get_phys_mem_ptr_mut(PhysAddr::new(0xb8000)), 80, 25))
-}
 
 unsafe fn init_sse() {
     use x86_64::registers::control::{Cr0, Cr0Flags, Cr4, Cr4Flags};
@@ -56,7 +51,12 @@ pub(crate) unsafe fn init_phase_1(boot_info: &BootInfo) {
     init_bootstrap_tls(boot_info);
     cpuid::init_bsp();
 
-    crate::io::vt::init(create_primary_display(), 1);
+    crate::io::dev::init_device_root();
+
+    let vga_text = crate::io::dev::device_root()
+        .lock()
+        .add_device(DeviceLock::new(Box::from("vgatext"), VgaTextBuffer::for_primary_display()));
+    crate::io::vt::init(vga_text, 1);
 
     gdt::init();
     interrupt::init_bsp();
