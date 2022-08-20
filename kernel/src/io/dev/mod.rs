@@ -2,7 +2,9 @@ use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
+use core::fmt;
 use core::fmt::Debug;
+use core::ptr;
 
 use dyn_dyn::{dyn_dyn_base, dyn_dyn_cast, dyn_dyn_impl, GetDynDynTable};
 
@@ -76,12 +78,35 @@ impl<T: ?Sized> DeviceLock<T> {
         &*self.name
     }
 
+    pub fn full_name(&self) -> impl fmt::Display + '_ {
+        DeviceFullName(self)
+    }
+
     pub fn lock(&self) -> UninterruptibleSpinlockGuard<T> {
         self.dev.lock()
     }
 
     pub fn try_lock(&self) -> Option<UninterruptibleSpinlockGuard<T>> {
         self.dev.try_lock()
+    }
+}
+
+struct DeviceFullName<'a, T: ?Sized>(&'a DeviceLock<T>);
+
+impl<'a, T: ?Sized> fmt::Display for DeviceFullName<'a, T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let DeviceFullName(dev) = *self;
+
+        if let Some(parent) = dev.parent.upgrade() {
+            write!(f, "{}::", DeviceFullName(&*parent))?;
+        } else if !ptr::eq(
+            &**device_root() as *const DeviceLock<dyn Device> as *const DeviceLock<()>,
+            dev as *const DeviceLock<T> as *const DeviceLock<()>
+        ) {
+            write!(f, "(???)::")?;
+        }
+
+        write!(f, "{}", dev.name)
     }
 }
 
