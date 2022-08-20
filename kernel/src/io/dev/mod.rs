@@ -39,7 +39,7 @@ struct DummyDevice {}
 impl Device for DummyDevice {}
 
 #[derive(Debug)]
-pub struct DeviceLock<T: Device + ?Sized> {
+pub struct DeviceLock<T: ?Sized> {
     parent: DeviceWeak<dyn Device>,
     name: Box<str>,
     dev: UninterruptibleSpinlock<T>
@@ -67,7 +67,7 @@ impl<T: Device> DeviceLock<T> {
     }
 }
 
-impl<T: Device + ?Sized> DeviceLock<T> {
+impl<T: ?Sized> DeviceLock<T> {
     pub fn parent_dev(&self) -> &DeviceWeak<dyn Device> {
         &self.parent
     }
