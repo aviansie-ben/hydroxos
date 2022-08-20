@@ -59,6 +59,27 @@ pub struct FutureWait<T> {
     val: UnsafeCell<MaybeUninit<T>>
 }
 
+impl<T> FutureWait<T> {
+    fn new(wait_refs: usize, val_refs: usize) -> *const FutureWait<T> {
+        Box::into_raw(Box::new(FutureWait {
+            generic: FutureWaitGeneric {
+                state: UninterruptibleSpinlock::new(FutureWaitGenericState {
+                    wait_refs,
+                    val_refs,
+                    resolved: false,
+                    actions: vec![]
+                }),
+                wait: ThreadWaitList::new()
+            },
+            val: UnsafeCell::new(MaybeUninit::uninit())
+        }))
+    }
+
+    unsafe fn destroy(ptr: *const FutureWait<T>) {
+        drop(Box::from_raw(ptr as *mut FutureWait<T>));
+    }
+}
+
 #[derive(Debug, Clone)]
 struct FutureWaitFreer {
     ptr: *const (),
@@ -92,19 +113,11 @@ pub struct Future<T>(FutureInternal<T>);
 
 impl<T> Future<T> {
     /// Creates a new unresolved [`Future`] that can be fulfilled using the provided [`FutureWriter`].
+    ///
+    /// If there's a need to create a [`FutureWriter`] without immediately requiring an associated [`Future`], it's generally preferred to
+    /// call [`FutureWriter::new`].
     pub fn new() -> (Future<T>, FutureWriter<T>) {
-        let wait = Box::leak(Box::new(FutureWait {
-            generic: FutureWaitGeneric {
-                state: UninterruptibleSpinlock::new(FutureWaitGenericState {
-                    wait_refs: 2,
-                    val_refs: 1,
-                    resolved: false,
-                    actions: vec![]
-                }),
-                wait: ThreadWaitList::new()
-            },
-            val: UnsafeCell::new(MaybeUninit::uninit())
-        }));
+        let wait = FutureWait::new(2, 1);
 
         (Future(FutureInternal::Waiting(wait, PhantomData)), FutureWriter {
             wait,
@@ -135,7 +148,7 @@ impl<T> Future<T> {
 
                     if wait.state.wait_refs == 0 {
                         drop(wait);
-                        drop(Box::from_raw(ptr as *mut FutureWait<T>));
+                        FutureWait::destroy(ptr);
                     }
 
                     self.0 = FutureInternal::Done(val);
@@ -297,7 +310,7 @@ impl<T> Future<T> {
                     Future(FutureInternal::WaitingNoVal(&(*ptr).generic as *const _, FutureWaitFreer {
                         ptr: ptr as *const (),
                         free_fn: |ptr| {
-                            drop(Box::from_raw(ptr as *mut FutureWait<T>));
+                            FutureWait::destroy(ptr as *const FutureWait<T>);
                         },
                         _data: PhantomData
                     }))
@@ -314,7 +327,7 @@ impl<T> Future<T> {
             wait.wait.wake_all();
         } else {
             drop(wait);
-            drop(Box::from_raw(ptr as *mut FutureWait<T>));
+            FutureWait::destroy(ptr);
         }
     }
 }
@@ -469,6 +482,30 @@ impl<T> FutureWriter<T> {
         }
 
         Future::dec_wait_ref(ptr, wait);
+    }
+
+    /// Creates a new writer without yet creating an associated [`Future`].
+    ///
+    /// This is useful for creating a [`Future`] for a known future event and stashing its writer somewhere before it is known whether any
+    /// consumers will actually exist. In order for the resolved value to be read, [`FutureWriter::as_future`] will need to be called to
+    /// create a [`Future`] for the returned writer.
+    ///
+    /// If a [`Future`] that would resolve from this writer is desired immediately, it's preferred to call [`Future::new`] instead.
+    pub fn new() -> FutureWriter<T> {
+        FutureWriter {
+            wait: FutureWait::new(1, 0),
+            _data: PhantomData
+        }
+    }
+
+    /// Creates a new [`Future`] that will resolve to the value written to this writer.
+    pub fn as_future(&self) -> Future<T> {
+        let mut guard = unsafe { (*self.wait).generic.lock() };
+
+        guard.state.wait_refs += 1;
+        guard.state.val_refs += 1;
+
+        Future(FutureInternal::Waiting(self.wait, PhantomData))
     }
 
     /// Resolves the future associated with this writer with the provided value.

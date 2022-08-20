@@ -339,7 +339,6 @@ pub enum ThreadState {
 struct ThreadInternal {
     state: ThreadState,
     regs: SavedRegisters,
-    join_waiter: Future<()>,
     join_writer: Option<FutureWriter<()>>
 }
 
@@ -374,16 +373,13 @@ impl !Unpin for Thread {}
 
 impl Thread {
     fn create_internal(process_lock: &mut ProcessLock, regs: SavedRegisters) -> Pin<Arc<Thread>> {
-        let (join_waiter, join_writer) = Future::new();
-
         let thread = Arc::pin(Thread {
             process: PinWeak::downgrade(&process_lock.process.as_arc()),
             thread_id: process_lock.guard.next_thread_id,
             internal: UninterruptibleSpinlock::new(ThreadInternal {
                 state: ThreadState::Suspended,
                 regs,
-                join_waiter,
-                join_writer: Some(join_writer)
+                join_writer: Some(FutureWriter::new())
             }),
             process_internal: SharedUnsafeCell::new(ThreadProcessInternal {
                 prev: process_lock.guard.threads_tail,
@@ -723,6 +719,9 @@ impl<'a> ThreadLock<'a> {
 
     /// Returns a future that will resolve to the unit value once this thread dies.
     pub fn join(&self) -> Future<()> {
-        self.guard.join_waiter.clone()
+        self.guard
+            .join_writer
+            .as_ref()
+            .map_or_else(|| Future::done(()), |join_writer| join_writer.as_future())
     }
 }
