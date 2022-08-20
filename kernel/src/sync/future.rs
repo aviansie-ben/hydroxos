@@ -346,6 +346,10 @@ impl Future<()> {
         for mut f in fs {
             num_futures += 1;
 
+            if num_futures == usize::MAX {
+                panic!("Iterator passed to Future::all is too long");
+            }
+
             f.when_resolved(move |_| unsafe {
                 let wait_generic = (*wait.unwrap()).generic.lock();
 
