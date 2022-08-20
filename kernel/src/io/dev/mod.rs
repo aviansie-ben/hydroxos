@@ -4,7 +4,7 @@ use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
-use dyn_dyn::{dyn_dyn_base, dyn_dyn_cast, dyn_dyn_derived, DynDyn};
+use dyn_dyn::{dyn_dyn_base, dyn_dyn_cast, dyn_dyn_impl, GetDynDynTable};
 
 use crate::io::dev::hub::{DeviceHub, VirtualDeviceHub};
 use crate::log;
@@ -35,7 +35,7 @@ pub trait Device: Send + Sync + Debug + 'static {
 #[derive(Debug)]
 struct DummyDevice {}
 
-#[dyn_dyn_derived]
+#[dyn_dyn_impl]
 impl Device for DummyDevice {}
 
 #[derive(Debug)]
@@ -122,9 +122,9 @@ pub fn log_device_tree() {
                 &type_name[short_idx..]
             };
 
-            let (_, impls) = DynDyn::<dyn Device>::deref_dyn_dyn(&&*lock);
+            let impls = GetDynDynTable::<dyn Device>::get_dyn_dyn_table(&&*lock);
 
-            let children: Option<Vec<_>> = if let Some(hub) = dyn_dyn_cast!(Device => DeviceHub, &lock) {
+            let children: Option<Vec<_>> = if let Ok(hub) = dyn_dyn_cast!(Device => DeviceHub, &lock) {
                 Some(hub.children().iter().cloned().collect())
             } else {
                 None

@@ -1,6 +1,6 @@
 use core::fmt;
 
-use dyn_dyn::dyn_dyn_derived;
+use dyn_dyn::dyn_dyn_impl;
 use x86_64::instructions::port::Port;
 
 use crate::arch::page;
@@ -192,7 +192,7 @@ impl TerminalDisplay for VgaTextBuffer {
     }
 }
 
-#[dyn_dyn_derived(TerminalDisplay)]
+#[dyn_dyn_impl(TerminalDisplay)]
 impl Device for VgaTextBuffer {}
 
 pub struct Writer<'a> {

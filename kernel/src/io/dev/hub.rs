@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use core::fmt::Debug;
 use core::ptr;
 
-use dyn_dyn::dyn_dyn_derived;
+use dyn_dyn::dyn_dyn_impl;
 use itertools::Itertools;
 
 use crate::io::dev::{Device, DeviceLock, DeviceRef, DeviceWeak};
@@ -52,7 +52,7 @@ impl VirtualDeviceHub {
     }
 }
 
-#[dyn_dyn_derived(DeviceHub)]
+#[dyn_dyn_impl(DeviceHub)]
 impl Device for VirtualDeviceHub {
     unsafe fn on_connected(&mut self, own_ref: &DeviceRef<Self>)
     where
