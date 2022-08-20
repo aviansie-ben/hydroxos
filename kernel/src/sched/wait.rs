@@ -2,9 +2,9 @@
 
 use alloc::sync::Arc;
 use core::marker::PhantomData;
-use core::mem::{ManuallyDrop, MaybeUninit};
+use core::mem::ManuallyDrop;
 use core::pin::Pin;
-use core::{fmt, ptr};
+use core::{fmt, mem, ptr};
 
 use super::task::{Thread, ThreadLock, ThreadState};
 use crate::sync::UninterruptibleSpinlock;
@@ -78,6 +78,14 @@ impl ThreadWaitListInternal {
     }
 }
 
+pub struct ThreadWaitDropGuard;
+
+impl Drop for ThreadWaitDropGuard {
+    fn drop(&mut self) {
+        panic!("Missing call to ThreadWait::suspend after calling ThreadWaitList::wait");
+    }
+}
+
 /// A struct representing that the thread has been placed on a wait list and needs to be suspended.
 ///
 /// This struct is responsible for making sure that the spinlock for the current thread is held between the time that the current thread is
@@ -88,7 +96,11 @@ impl ThreadWaitListInternal {
 /// Causing a value of this type to be dropped without running [`ThreadWait::suspend`] will cause a panic. This is because releasing the
 /// spinlock on the current thread after adding the thread to a wait list but before its state has been saved can cause undefined behaviour
 /// due to other cores seeing inconsistent state information in the thread.
-pub struct ThreadWait<'a>(MaybeUninit<ThreadLock<'static>>, PhantomData<&'a ThreadWaitList>);
+pub struct ThreadWait<'a>(
+    ManuallyDrop<ThreadLock<'static>>,
+    ThreadWaitDropGuard,
+    PhantomData<&'a ThreadWaitList>
+);
 
 impl<'a> ThreadWait<'a> {
     /// Suspends the current thread and consumes this guard.
@@ -99,17 +111,12 @@ impl<'a> ThreadWait<'a> {
     /// thread, aside from the single one owned by the thread lock that is part of this object itself. Context switching while an
     /// uninterruptible lock guard is held could result in a deadlock due to the new thread trying to acquire a lock that was held prior to
     /// a context switch.
-    pub fn suspend(self) {
+    pub fn suspend(mut self) {
         unsafe {
-            let this = ManuallyDrop::new(self);
-            Thread::suspend_current(ptr::read(this.0.as_ptr()));
+            // We're about to properly call Thread::suspend_current, so we don't want to panic upon dropped the ThreadWaitDropGuard.
+            mem::forget(self.1);
+            Thread::suspend_current(ManuallyDrop::take(&mut self.0));
         };
-    }
-}
-
-impl<'a> Drop for ThreadWait<'a> {
-    fn drop(&mut self) {
-        panic!("Missing call to ThreadWait::suspend after calling ThreadWaitList::wait");
     }
 }
 
@@ -160,7 +167,7 @@ impl ThreadWaitList {
             //         is never unlocked and the improper state updates can never be observed. Obviously, this is undesirable but does not
             //         have any implications for safety guarantees.
             internal.enqueue(thread.thread().as_arc());
-            ThreadWait(MaybeUninit::new(thread), PhantomData)
+            ThreadWait(ManuallyDrop::new(thread), ThreadWaitDropGuard, PhantomData)
         }
     }
 
@@ -230,7 +237,7 @@ impl ThreadWaitList {
 
 impl Drop for ThreadWaitList {
     fn drop(&mut self) {
-        if !self.internal.try_lock().unwrap().head.is_null() {
+        if !self.internal.get_mut().head.is_null() {
             panic!("Attempt to drop non-empty ThreadWaitList");
         };
     }
