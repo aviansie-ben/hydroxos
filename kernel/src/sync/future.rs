@@ -463,6 +463,9 @@ impl<T> Drop for Future<T> {
     }
 }
 
+unsafe impl<T: Send> Send for Future<T> {}
+unsafe impl<T: Send> Sync for Future<T> {}
+
 /// Represents ownership of the "resolution side" of a future. Holding a value of this type allows the caller to resolve its associated
 /// future.
 ///
@@ -554,6 +557,9 @@ impl<T> Drop for FutureWriter<T> {
         );
     }
 }
+
+unsafe impl<T: Send> Send for FutureWriter<T> {}
+unsafe impl<T: Send> Sync for FutureWriter<T> {}
 
 #[cfg(test)]
 mod test {
