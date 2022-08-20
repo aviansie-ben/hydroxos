@@ -15,7 +15,7 @@ use crate::virtual_alloc::{VirtualAllocRegion, VirtualAllocator};
 
 pub const PAGE_SIZE: usize = 4096;
 
-static PHYS_MEM_BASE: SharedUnsafeCell<*mut u8> = SharedUnsafeCell::new(core::ptr::null_mut());
+static PHYS_MEM_BASE: SharedUnsafeCell<*mut u8> = SharedUnsafeCell::new(ptr::null_mut());
 static KERNEL_ADDRESS_SPACE: SharedUnsafeCell<UninterruptibleSpinlock<AddressSpace>> =
     SharedUnsafeCell::new(UninterruptibleSpinlock::new(unsafe {
         AddressSpace::from_page_table(PhysAddr::zero())
@@ -23,7 +23,7 @@ static KERNEL_ADDRESS_SPACE: SharedUnsafeCell<UninterruptibleSpinlock<AddressSpa
 
 pub fn init_phys_mem_base(phys_mem_base: *mut u8) {
     unsafe {
-        assert_eq!(core::ptr::null_mut(), *PHYS_MEM_BASE.get());
+        assert_eq!(ptr::null_mut(), *PHYS_MEM_BASE.get());
         *PHYS_MEM_BASE.get() = phys_mem_base;
     };
 }
@@ -32,7 +32,7 @@ pub fn get_phys_mem_base() -> *mut u8 {
     unsafe {
         let phys_mem_base = *PHYS_MEM_BASE.get();
 
-        assert_ne!(core::ptr::null_mut(), phys_mem_base);
+        assert_ne!(ptr::null_mut(), phys_mem_base);
         phys_mem_base
     }
 }

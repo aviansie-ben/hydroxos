@@ -18,7 +18,7 @@ pub fn show_panic_crash_screen(info: &PanicInfo) -> ! {
     let _ = write!(w, "{}", info);
 
     loop {
-        ::x86_64::instructions::hlt();
+        x86_64::instructions::hlt();
     }
 }
 

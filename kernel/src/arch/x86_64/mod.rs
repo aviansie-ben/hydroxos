@@ -85,6 +85,6 @@ unsafe extern "C" fn idle() {
 
 pub fn halt() -> ! {
     loop {
-        ::x86_64::instructions::hlt();
+        x86_64::instructions::hlt();
     }
 }

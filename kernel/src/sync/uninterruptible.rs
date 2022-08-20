@@ -271,24 +271,24 @@ mod test {
     #[test_case]
     fn test_interrupt_disabler() {
         assert_eq!(0, InterruptDisabler::num_held());
-        assert!(x86_64::instructions::interrupts::are_enabled());
+        assert!(interrupts::are_enabled());
 
         {
             let _disabler = InterruptDisabler::new();
 
-            assert!(!x86_64::instructions::interrupts::are_enabled());
+            assert!(!interrupts::are_enabled());
             assert_eq!(1, InterruptDisabler::num_held());
             assert!(InterruptDisabler::was_enabled());
         }
 
         assert_eq!(0, InterruptDisabler::num_held());
-        assert!(x86_64::instructions::interrupts::are_enabled());
+        assert!(interrupts::are_enabled());
     }
 
     #[test_case]
     fn test_interrupt_disabler_nested() {
         assert_eq!(0, InterruptDisabler::num_held());
-        assert!(x86_64::instructions::interrupts::are_enabled());
+        assert!(interrupts::are_enabled());
 
         {
             let _disabler_1 = InterruptDisabler::new();
@@ -296,60 +296,60 @@ mod test {
             {
                 let _disabler_2 = InterruptDisabler::new();
 
-                assert!(!x86_64::instructions::interrupts::are_enabled());
+                assert!(!interrupts::are_enabled());
                 assert_eq!(2, InterruptDisabler::num_held());
                 assert!(InterruptDisabler::was_enabled());
             }
 
-            assert!(!x86_64::instructions::interrupts::are_enabled());
+            assert!(!interrupts::are_enabled());
             assert_eq!(1, InterruptDisabler::num_held());
             assert!(InterruptDisabler::was_enabled());
         }
 
         assert_eq!(0, InterruptDisabler::num_held());
-        assert!(x86_64::instructions::interrupts::are_enabled());
+        assert!(interrupts::are_enabled());
     }
 
     #[test_case]
     fn test_interrupt_disabler_keep_disable() {
         assert_eq!(0, InterruptDisabler::num_held());
-        assert!(x86_64::instructions::interrupts::are_enabled());
+        assert!(interrupts::are_enabled());
 
-        x86_64::instructions::interrupts::disable();
+        interrupts::disable();
 
         {
             let _disabler = InterruptDisabler::new();
 
-            assert!(!x86_64::instructions::interrupts::are_enabled());
+            assert!(!interrupts::are_enabled());
             assert_eq!(1, InterruptDisabler::num_held());
             assert!(!InterruptDisabler::was_enabled());
         }
 
         assert_eq!(0, InterruptDisabler::num_held());
-        assert!(!x86_64::instructions::interrupts::are_enabled());
+        assert!(!interrupts::are_enabled());
 
-        x86_64::instructions::interrupts::enable();
+        interrupts::enable();
     }
 
     #[test_case]
     fn test_interrupt_disabler_force_disable() {
         assert_eq!(0, InterruptDisabler::num_held());
-        assert!(x86_64::instructions::interrupts::are_enabled());
+        assert!(interrupts::are_enabled());
 
         {
             let _disabler = InterruptDisabler::new();
 
             InterruptDisabler::force_remain_disabled();
 
-            assert!(!x86_64::instructions::interrupts::are_enabled());
+            assert!(!interrupts::are_enabled());
             assert_eq!(1, InterruptDisabler::num_held());
             assert!(!InterruptDisabler::was_enabled());
         }
 
         assert_eq!(0, InterruptDisabler::num_held());
-        assert!(!x86_64::instructions::interrupts::are_enabled());
+        assert!(!interrupts::are_enabled());
 
-        x86_64::instructions::interrupts::enable();
+        interrupts::enable();
     }
 
     #[test_case]

@@ -142,7 +142,7 @@ unsafe extern "C" fn handle_interrupt(frame: &mut InterruptFrame) {
 
     // TODO Load correct FS_BASE based on processor for SMP
     x86_64::registers::model_specific::Msr::new(0xc0000100).write(*super::KERNEL_FS_BASE.get());
-    crate::sched::begin_interrupt();
+    sched::begin_interrupt();
 
     let interrupt_num = frame.interrupt_num as u8;
 
@@ -162,8 +162,8 @@ unsafe extern "C" fn handle_interrupt(frame: &mut InterruptFrame) {
             }
             InterruptDisabler::force_remain_disabled();
 
-            crate::sched::perform_context_switch_interrupt(
-                Some(core::ptr::read(frame.rax as *const crate::sched::task::ThreadLock)),
+            sched::perform_context_switch_interrupt(
+                Some(core::ptr::read(frame.rax as *const sched::task::ThreadLock)),
                 frame
             );
         },
@@ -177,7 +177,7 @@ unsafe extern "C" fn handle_interrupt(frame: &mut InterruptFrame) {
         sched::end_interrupt();
     };
 
-    crate::sched::end_interrupt();
+    sched::end_interrupt();
 }
 
 handler_without_code!(begin_isr0, 0);

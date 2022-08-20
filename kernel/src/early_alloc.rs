@@ -9,12 +9,12 @@ const EARLY_ALLOC_SIZE: usize = 1024 * 1024;
 
 static EARLY_ALLOC_AREA: PageAligned<SharedUnsafeCell<[u8; EARLY_ALLOC_SIZE]>> =
     PageAligned::new(SharedUnsafeCell::new([0; EARLY_ALLOC_SIZE]));
-static EARLY_ALLOC_MARK: AtomicPtr<u8> = AtomicPtr::new(core::ptr::null_mut());
+static EARLY_ALLOC_MARK: AtomicPtr<u8> = AtomicPtr::new(ptr::null_mut());
 
 pub fn init() {
     if EARLY_ALLOC_MARK
         .compare_exchange(
-            core::ptr::null_mut(),
+            ptr::null_mut(),
             EARLY_ALLOC_AREA.get() as *mut u8,
             Ordering::Relaxed,
             Ordering::Relaxed

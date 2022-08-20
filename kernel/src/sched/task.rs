@@ -5,7 +5,6 @@ use alloc::sync::Arc;
 use core::arch::asm;
 use core::cell::UnsafeCell;
 use core::fmt;
-use core::fmt::Formatter;
 use core::marker::PhantomData;
 use core::mem::{self, MaybeUninit};
 use core::pin::Pin;
@@ -619,7 +618,7 @@ impl PartialEq for Thread {
 impl Eq for Thread {}
 
 impl fmt::Debug for Thread {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Thread {}", self.debug_name())
     }
 }
