@@ -7,7 +7,7 @@ use core::cell::UnsafeCell;
 use core::fmt;
 use core::fmt::Formatter;
 use core::marker::PhantomData;
-use core::mem::MaybeUninit;
+use core::mem::{self, MaybeUninit};
 use core::pin::Pin;
 use core::ptr;
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -339,7 +339,8 @@ pub enum ThreadState {
 struct ThreadInternal {
     state: ThreadState,
     regs: SavedRegisters,
-    join_writer: Option<FutureWriter<()>>
+    join_writer: Option<FutureWriter<()>>,
+    err_on_block: bool
 }
 
 unsafe impl Send for ThreadInternal {}
@@ -379,7 +380,8 @@ impl Thread {
             internal: UninterruptibleSpinlock::new(ThreadInternal {
                 state: ThreadState::Suspended,
                 regs,
-                join_writer: Some(FutureWriter::new())
+                join_writer: Some(FutureWriter::new()),
+                err_on_block: false
             }),
             process_internal: SharedUnsafeCell::new(ThreadProcessInternal {
                 prev: process_lock.guard.threads_tail,
@@ -425,6 +427,40 @@ impl Thread {
         Thread::current_interrupted().unwrap()
     }
 
+    /// Calls the provided function, while ensuring that any attempt to block the current thread results in a panic.
+    ///
+    /// This function can be used to enforce that a callback must not attempt to block, since doing so may cause other parts of the system
+    /// to become unresponsive or may be incorrect in some cases, e.g. might be called from an interrupt. In general, a function called from
+    /// such a context should use [`Future::when_resolved`] instead of blocking.
+    ///
+    /// When called while handling an interrupt, this function simply calls the provided function directly, since blocking in such a context
+    /// is already impossible.
+    ///
+    /// # Panics
+    ///
+    /// If the provided function attempts to block at any point by calling [`Thread::suspend_current`], then a panic will occur.
+    pub fn run_non_blocking<T>(f: impl FnOnce() -> T) -> T {
+        let thread = if !super::is_handling_interrupt() {
+            // Can't use Thread::current() since run_non_blocking is used in some cases before the kernel main thread is fully initialized,
+            // so we need to gracefully handle that case.
+            Thread::current_interrupted()
+        } else {
+            None
+        };
+
+        if let Some(thread) = thread {
+            let old_err_on_block = mem::replace(&mut thread.lock().guard.err_on_block, true);
+            let val = f();
+            if !old_err_on_block {
+                thread.lock().guard.err_on_block = false;
+            }
+
+            val
+        } else {
+            f()
+        }
+    }
+
     /// Suspends the currently executing thread and invokes a context switch to another ready thread. It is the caller's responsibility to
     /// correctly set the state of the current thread before calling this function.
     ///
@@ -444,7 +480,9 @@ impl Thread {
 
         if InterruptDisabler::num_held() != 1 {
             panic!("Attempt to call Thread::suspend_thread with live InterruptDisabler");
-        };
+        } else if thread_lock.guard.err_on_block {
+            panic!("Attempt to call Thread::suspend_thread in a non-blocking context");
+        }
 
         let thread_lock = MaybeUninit::new(thread_lock);
         asm!(

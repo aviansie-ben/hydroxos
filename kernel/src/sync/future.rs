@@ -10,6 +10,7 @@ use core::mem;
 use core::mem::MaybeUninit;
 use core::ptr;
 
+use crate::sched::task::Thread;
 use crate::sched::wait::ThreadWaitList;
 use crate::sync::uninterruptible::{UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
 use crate::util::SendPtr;
@@ -285,10 +286,16 @@ impl<T> Future<T> {
     /// resolved. Otherwise, it will be run when [`FutureWriter::finish`] is called, from the context of the code that calls this method.
     /// As a result, the provided callback may be run in a different thread than the current thread or even in the context of an interrupt
     /// handler.
+    ///
+    /// # Panics
+    ///
+    /// A panic will occur when calling the provided callback if it attempts to perform a blocking operation.
     pub fn when_resolved(&mut self, f: impl FnOnce(&T) + Send + 'static) {
         self.do_action(|state| match state {
             Ok(val) => {
-                f(val);
+                Thread::run_non_blocking(|| {
+                    f(val);
+                });
             },
             Err(mut wait) => {
                 wait.state.actions.push(Box::new(|ptr, _| unsafe { f(&*(ptr as *const T)) }));
@@ -476,9 +483,11 @@ impl<T> FutureWriter<T> {
 
         let actions = mem::take(&mut wait.state.actions);
         if !actions.is_empty() {
-            for a in actions.into_iter() {
-                a(val_ptr as *const (), &mut wait);
-            }
+            Thread::run_non_blocking(|| {
+                for a in actions.into_iter() {
+                    a(val_ptr as *const (), &mut wait);
+                }
+            });
         }
 
         if wait.state.val_refs == 0 {
