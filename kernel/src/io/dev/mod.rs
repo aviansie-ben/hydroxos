@@ -6,7 +6,7 @@ use core::fmt;
 use core::fmt::Debug;
 use core::ptr;
 
-use dyn_dyn::{dyn_dyn_base, dyn_dyn_cast, dyn_dyn_impl, GetDynDynTable};
+use dyn_dyn::{dyn_dyn_base, dyn_dyn_cast, dyn_dyn_impl, DynDynBase, DynDynTable, GetDynDynTable};
 
 use crate::io::dev::hub::{DeviceHub, VirtualDeviceHub};
 use crate::log;
@@ -44,6 +44,7 @@ impl Device for DummyDevice {}
 pub struct DeviceLock<T: ?Sized> {
     parent: DeviceWeak<dyn Device>,
     name: Box<str>,
+    dev_table: DynDynTable,
     dev: UninterruptibleSpinlock<T>
 }
 
@@ -52,6 +53,7 @@ impl<T: Device> DeviceLock<T> {
         DeviceLock {
             parent: <DeviceWeak<DummyDevice>>::new(),
             name,
+            dev_table: GetDynDynTable::<dyn Device>::get_dyn_dyn_table(&&dev),
             dev: UninterruptibleSpinlock::new(dev)
         }
     }
@@ -88,6 +90,12 @@ impl<T: ?Sized> DeviceLock<T> {
 
     pub fn try_lock(&self) -> Option<UninterruptibleSpinlockGuard<T>> {
         self.dev.try_lock()
+    }
+}
+
+unsafe impl DynDynBase for DeviceLock<dyn Device> {
+    fn get_dyn_dyn_table(&self) -> DynDynTable {
+        self.dev_table
     }
 }
 
