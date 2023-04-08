@@ -1,7 +1,6 @@
 #![no_std]
 #![cfg_attr(test, no_main)]
 #![feature(asm_const)]
-#![feature(asm_sym)]
 #![feature(alloc_error_handler)]
 #![feature(const_mut_refs)]
 #![feature(custom_test_frameworks)]
