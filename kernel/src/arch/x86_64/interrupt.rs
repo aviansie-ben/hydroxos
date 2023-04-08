@@ -162,10 +162,7 @@ unsafe extern "C" fn handle_interrupt(frame: &mut InterruptFrame) {
             }
             InterruptDisabler::force_remain_disabled();
 
-            sched::perform_context_switch_interrupt(
-                Some(core::ptr::read(frame.rax as *const sched::task::ThreadLock)),
-                frame
-            );
+            sched::perform_context_switch_interrupt(Some(core::ptr::read(frame.rax as *const sched::task::ThreadLock)), frame);
         },
         _ => {}
     }
