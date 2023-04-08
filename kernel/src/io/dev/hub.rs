@@ -7,21 +7,48 @@ use core::ptr;
 use dyn_dyn::dyn_dyn_impl;
 use itertools::Itertools;
 
-use crate::io::dev::{Device, DeviceLock, DeviceRef, DeviceWeak};
+use crate::io::dev::{Device, DeviceNode, DeviceRef, DeviceWeak};
+use crate::sync::UninterruptibleSpinlock;
+
+#[derive(Debug)]
+pub struct DeviceHubLockedError;
 
 pub trait DeviceHub: Device {
-    fn children(&self) -> &[DeviceRef<dyn Device>];
+    fn for_children(&self, f: &mut dyn FnMut(&DeviceRef<dyn Device>) -> bool) -> bool;
+    fn try_for_children(&self, f: &mut dyn FnMut(&DeviceRef<dyn Device>) -> bool) -> Result<bool, DeviceHubLockedError> {
+        Ok(self.for_children(f))
+    }
+}
+
+pub trait DeviceHubExt: DeviceHub {
+    fn collect_children(&self, children: &mut Vec<DeviceRef<dyn Device>>);
+    fn children(&self) -> Vec<DeviceRef<dyn Device>>;
+}
+
+impl<T: DeviceHub> DeviceHubExt for T {
+    fn collect_children(&self, children: &mut Vec<DeviceRef<dyn Device>>) {
+        self.for_children(&mut |c| {
+            children.push(c.clone());
+            true
+        });
+    }
+
+    fn children(&self) -> Vec<DeviceRef<dyn Device>> {
+        let mut children = vec![];
+        self.collect_children(&mut children);
+        children
+    }
 }
 
 #[derive(Debug)]
-pub struct VirtualDeviceHub {
+struct VirtualDeviceHubInternals {
     own_ref: DeviceWeak<VirtualDeviceHub>,
     children: Vec<DeviceRef<dyn Device>>
 }
 
-impl VirtualDeviceHub {
-    pub fn new() -> VirtualDeviceHub {
-        VirtualDeviceHub {
+impl VirtualDeviceHubInternals {
+    pub fn new() -> VirtualDeviceHubInternals {
+        VirtualDeviceHubInternals {
             own_ref: Weak::new(),
             children: vec![]
         }
@@ -33,7 +60,7 @@ impl VirtualDeviceHub {
         }
     }
 
-    pub fn add_device<T: Device>(&mut self, dev: DeviceLock<T>) -> DeviceRef<T> {
+    fn add_device<T: Device>(&mut self, dev: DeviceNode<T>) -> DeviceRef<T> {
         self.assert_connected();
 
         let dev = dev.connect(self.own_ref.clone());
@@ -42,7 +69,7 @@ impl VirtualDeviceHub {
         dev
     }
 
-    pub fn remove_device(&mut self, dev: &DeviceRef<dyn Device>) {
+    fn remove_device(&mut self, dev: &DeviceRef<dyn Device>) {
         let dev = &**dev;
         if let Some((idx, _)) = self.children.iter().find_position(|&child| ptr::eq(&**child, dev)) {
             self.children.remove(idx);
@@ -50,27 +77,70 @@ impl VirtualDeviceHub {
             panic!("Attempt to remove device from VirtualDeviceHub that it's not connected to");
         }
     }
-}
 
-#[dyn_dyn_impl(DeviceHub)]
-impl Device for VirtualDeviceHub {
-    unsafe fn on_connected(&mut self, own_ref: &DeviceRef<Self>)
-    where
-        Self: Sized
-    {
+    unsafe fn on_connected(&mut self, own_ref: &DeviceRef<VirtualDeviceHub>) {
         self.own_ref = Arc::downgrade(own_ref);
     }
 
     unsafe fn on_disconnected(&mut self) {
         self.own_ref = Weak::new();
         for child in self.children.drain(..) {
-            child.dev.lock().on_disconnected();
+            child.dev.on_disconnected();
         }
+    }
+
+    fn for_children(&self, f: &mut dyn FnMut(&DeviceRef<dyn Device>) -> bool) -> bool {
+        for child in self.children.iter() {
+            if !f(child) {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+#[derive(Debug)]
+pub struct VirtualDeviceHub {
+    internal: UninterruptibleSpinlock<VirtualDeviceHubInternals>
+}
+
+impl VirtualDeviceHub {
+    pub fn new() -> VirtualDeviceHub {
+        VirtualDeviceHub {
+            internal: UninterruptibleSpinlock::new(VirtualDeviceHubInternals::new())
+        }
+    }
+
+    pub fn add_device<T: Device>(&self, dev: DeviceNode<T>) -> DeviceRef<T> {
+        self.internal.lock().add_device(dev)
+    }
+
+    pub fn remove_device<T: Device>(&self, dev: &DeviceRef<dyn Device>) {
+        self.internal.lock().remove_device(dev)
+    }
+}
+
+#[dyn_dyn_impl(DeviceHub)]
+impl Device for VirtualDeviceHub {
+    unsafe fn on_connected(&self, own_ref: &DeviceRef<VirtualDeviceHub>) {
+        self.internal.lock().on_connected(own_ref);
+    }
+
+    unsafe fn on_disconnected(&self) {
+        self.internal.lock().on_disconnected();
     }
 }
 
 impl DeviceHub for VirtualDeviceHub {
-    fn children(&self) -> &[DeviceRef<dyn Device>] {
-        &self.children
+    fn for_children(&self, f: &mut dyn FnMut(&DeviceRef<dyn Device>) -> bool) -> bool {
+        self.internal.lock().for_children(f)
+    }
+
+    fn try_for_children(&self, f: &mut dyn FnMut(&DeviceRef<dyn Device>) -> bool) -> Result<bool, DeviceHubLockedError> {
+        match self.internal.try_lock() {
+            Some(lock) => Ok(lock.for_children(f)),
+            None => Err(DeviceHubLockedError)
+        }
     }
 }

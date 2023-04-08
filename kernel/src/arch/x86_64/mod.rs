@@ -5,8 +5,8 @@ use core::ptr;
 use bootloader::BootInfo;
 pub use x86_64::{PhysAddr, VirtAddr};
 
-use crate::arch::dev::vgabuf::VgaTextBuffer;
-use crate::io::dev::DeviceLock;
+use crate::arch::dev::vgabuf::VgaTextBufferDevice;
+use crate::io::dev::DeviceNode;
 use crate::util::SharedUnsafeCell;
 
 pub mod cpuid;
@@ -54,8 +54,8 @@ pub(crate) unsafe fn init_phase_1(boot_info: &BootInfo) {
     crate::io::dev::init_device_root();
 
     let vga_text = crate::io::dev::device_root()
-        .lock()
-        .add_device(DeviceLock::new(Box::from("vgatext"), VgaTextBuffer::for_primary_display()));
+        .dev()
+        .add_device(DeviceNode::new(Box::from("vgatext"), VgaTextBufferDevice::for_primary_display()));
     crate::io::vt::init(vga_text, 1);
 
     gdt::init();

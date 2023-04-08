@@ -155,7 +155,7 @@ impl VirtualTerminalInternals {
         VIRTUAL_DISPLAYS.with_lock(|virtual_displays| {
             for &mut (ref mut display, vt_id) in virtual_displays.iter_mut() {
                 if vt_id == self.id {
-                    display.lock().redraw(self);
+                    display.dev().redraw(self);
                 };
             }
         });
@@ -214,10 +214,10 @@ impl VirtualTerminal {
     }
 }
 
-pub trait TerminalDisplay: Send {
+pub trait TerminalDisplay: Send + Sync {
     fn size(&self) -> (usize, usize);
-    fn clear(&mut self);
-    fn redraw(&mut self, vt: &VirtualTerminalInternals);
+    fn clear(&self);
+    fn redraw(&self, vt: &VirtualTerminalInternals);
 }
 
 static VIRTUAL_TERMINALS: UninterruptibleSpinlock<Vec<Arc<VirtualTerminal>>> = UninterruptibleSpinlock::new(Vec::new());
@@ -226,7 +226,7 @@ static VIRTUAL_DISPLAYS: UninterruptibleSpinlock<Vec<(DeviceRef<dyn TerminalDisp
 pub fn init(primary_display: DeviceRef<dyn TerminalDisplay>, num_terminals: usize) {
     assert!(num_terminals > 0);
 
-    let (width, height) = primary_display.lock().size();
+    let (width, height) = primary_display.dev().size();
 
     VIRTUAL_DISPLAYS.with_lock(|virtual_displays| {
         assert!(virtual_displays.is_empty());
@@ -244,7 +244,7 @@ pub fn init(primary_display: DeviceRef<dyn TerminalDisplay>, num_terminals: usiz
 
         virtual_terminals[0].0.with_lock(|vt| {
             VIRTUAL_DISPLAYS.with_lock(|virtual_displays| {
-                virtual_displays[0].0.lock().redraw(vt);
+                virtual_displays[0].0.dev().redraw(vt);
             });
         });
     });
@@ -261,7 +261,7 @@ pub fn switch_display(display_id: usize, terminal_id: usize) -> bool {
                 VIRTUAL_DISPLAYS.with_lock(|virtual_displays| {
                     if display_id < virtual_displays.len() {
                         virtual_displays[display_id].1 = terminal_id;
-                        virtual_displays[display_id].0.lock().redraw(vt);
+                        virtual_displays[display_id].0.dev().redraw(vt);
                         true
                     } else {
                         false

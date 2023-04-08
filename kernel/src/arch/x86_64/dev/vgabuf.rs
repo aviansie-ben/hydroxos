@@ -8,6 +8,8 @@ use crate::arch::PhysAddr;
 use crate::io::ansi::AnsiColor;
 use crate::io::dev::Device;
 use crate::io::vt::{TerminalDisplay, VTChar, VirtualTerminalInternals};
+use crate::sync::uninterruptible::UninterruptibleSpinlockGuard;
+use crate::sync::UninterruptibleSpinlock;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -161,18 +163,42 @@ impl VgaTextBuffer {
 unsafe impl Send for VgaTextBuffer {}
 unsafe impl Sync for VgaTextBuffer {}
 
-impl TerminalDisplay for VgaTextBuffer {
+#[derive(Debug)]
+pub struct VgaTextBufferDevice {
+    internal: UninterruptibleSpinlock<VgaTextBuffer>
+}
+
+impl VgaTextBufferDevice {
+    pub fn new(buf: VgaTextBuffer) -> VgaTextBufferDevice {
+        VgaTextBufferDevice {
+            internal: UninterruptibleSpinlock::new(buf)
+        }
+    }
+
+    pub unsafe fn for_primary_display() -> VgaTextBufferDevice {
+        VgaTextBufferDevice::new(VgaTextBuffer::for_primary_display())
+    }
+
+    pub fn lock(&self) -> UninterruptibleSpinlockGuard<VgaTextBuffer> {
+        self.internal.lock()
+    }
+}
+
+impl TerminalDisplay for VgaTextBufferDevice {
     fn size(&self) -> (usize, usize) {
-        (self.width, self.height)
+        let internal = self.internal.lock();
+        (internal.width, internal.height)
     }
 
-    fn clear(&mut self) {
-        self.clear(Color::White, Color::Black);
+    fn clear(&self) {
+        self.internal.lock().clear(Color::White, Color::Black);
     }
 
-    fn redraw(&mut self, vt: &VirtualTerminalInternals) {
-        for y in 0..vt.size.1.min(self.height) {
-            for x in 0..vt.size.0.min(self.width) {
+    fn redraw(&self, vt: &VirtualTerminalInternals) {
+        let mut internal = self.internal.lock();
+
+        for y in 0..vt.size.1.min(internal.height) {
+            for x in 0..vt.size.0.min(internal.width) {
                 let VTChar { ch, fg_color, bg_color } = vt.buf[vt.off(x, y)];
                 let ch = if ch.is_ascii() && !ch.is_ascii_control() {
                     ch as u8
@@ -180,20 +206,20 @@ impl TerminalDisplay for VgaTextBuffer {
                     b'\xfe'
                 };
 
-                self.set(x, y, ch, Color::from_ansi_color(fg_color), Color::from_ansi_color(bg_color));
+                internal.set(x, y, ch, Color::from_ansi_color(fg_color), Color::from_ansi_color(bg_color));
             }
         }
 
         if vt.cursor_hidden {
-            self.hide_cursor();
+            internal.hide_cursor();
         } else {
-            self.move_cursor(vt.cursor_pos.0, vt.cursor_pos.1);
+            internal.move_cursor(vt.cursor_pos.0, vt.cursor_pos.1);
         };
     }
 }
 
 #[dyn_dyn_impl(TerminalDisplay)]
-impl Device for VgaTextBuffer {}
+impl Device for VgaTextBufferDevice {}
 
 pub struct Writer<'a> {
     x: usize,
