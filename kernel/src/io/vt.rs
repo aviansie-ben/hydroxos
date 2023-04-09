@@ -282,6 +282,29 @@ impl VirtualTerminalManager {
             })
         }
     }
+
+    pub fn get_terminal(&self, id: usize) -> Option<DeviceRef<VirtualTerminal>> {
+        self.internal.lock().terminals.get(id).cloned()
+    }
+
+    pub fn switch_display(&self, display_id: usize, terminal_id: usize) -> bool {
+        let mut vtmgr = self.internal.lock();
+
+        if terminal_id < vtmgr.terminals.len() {
+            let vtmgr = &mut *vtmgr;
+            vtmgr.terminals[terminal_id].dev().0.with_lock(|vt| {
+                if display_id < vtmgr.displays.len() {
+                    vtmgr.displays[display_id].1 = terminal_id;
+                    vtmgr.displays[display_id].0.dev().redraw(vt);
+                    true
+                } else {
+                    false
+                }
+            })
+        } else {
+            false
+        }
+    }
 }
 
 impl DeviceHub for VirtualTerminalManager {
@@ -322,28 +345,4 @@ pub unsafe fn init(primary_display: DeviceRef<dyn TerminalDisplay>) {
 
 pub fn get_global_manager() -> &'static DeviceRef<VirtualTerminalManager> {
     unsafe { (*VT_MANAGER.get()).as_ref().unwrap() }
-}
-
-pub fn get_terminal(id: usize) -> Option<DeviceRef<VirtualTerminal>> {
-    let vtmgr = get_global_manager().dev().internal.lock();
-    vtmgr.terminals.get(id).cloned()
-}
-
-pub fn switch_display(display_id: usize, terminal_id: usize) -> bool {
-    let mut vtmgr = get_global_manager().dev().internal.lock();
-
-    if terminal_id < vtmgr.terminals.len() {
-        let vtmgr = &mut *vtmgr;
-        vtmgr.terminals[terminal_id].dev().0.with_lock(|vt| {
-            if display_id < vtmgr.displays.len() {
-                vtmgr.displays[display_id].1 = terminal_id;
-                vtmgr.displays[display_id].0.dev().redraw(vt);
-                true
-            } else {
-                false
-            }
-        })
-    } else {
-        false
-    }
 }

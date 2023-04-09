@@ -41,7 +41,7 @@ pub unsafe fn init_phase_1(boot_info: &'static BootInfo) {
     arch::init_phase_1(boot_info);
 
     frame_alloc::init(boot_info);
-    log::init(io::vt::get_terminal(0).unwrap());
+    log::init(io::vt::get_global_manager().dev().get_terminal(0).unwrap());
 }
 
 pub unsafe fn init_phase_2() {
