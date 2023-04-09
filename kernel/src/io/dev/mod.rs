@@ -11,6 +11,8 @@ use dyn_dyn::{dyn_dyn_base, dyn_dyn_cast, dyn_dyn_impl, DynDynBase, DynDynTable,
 
 use crate::io::dev::hub::{DeviceHub, DeviceHubLockedError, VirtualDeviceHub};
 use crate::log;
+use crate::sync::future::FutureWriter;
+use crate::sync::{Future, UninterruptibleSpinlock};
 use crate::util::SharedUnsafeCell;
 
 pub mod hub;
@@ -43,6 +45,7 @@ impl Device for DummyDevice {}
 pub struct DeviceNode<T: ?Sized> {
     parent: DeviceWeak<dyn Device>,
     name: Box<str>,
+    disconnect_event: UninterruptibleSpinlock<Option<FutureWriter<()>>>,
     dev: T
 }
 
@@ -51,12 +54,14 @@ impl<T: Device> DeviceNode<T> {
         DeviceNode {
             parent: <DeviceWeak<DummyDevice>>::new(),
             name,
+            disconnect_event: UninterruptibleSpinlock::new(None),
             dev
         }
     }
 
     pub fn connect(mut self, parent: DeviceWeak<dyn Device>) -> DeviceRef<T> {
         self.parent = parent;
+        self.disconnect_event = UninterruptibleSpinlock::new(Some(FutureWriter::new()));
 
         let dev = Arc::new(self);
 
@@ -65,6 +70,20 @@ impl<T: Device> DeviceNode<T> {
         }
 
         dev
+    }
+}
+
+impl<T: Device + ?Sized> DeviceNode<T> {
+    pub fn disconnect(&self) {
+        if let Some(disconnect_event) = self.disconnect_event.lock().take() {
+            disconnect_event.finish(());
+        } else {
+            panic!("Cannot disconnect an already disconnected device");
+        }
+
+        unsafe {
+            self.dev.on_disconnected();
+        }
     }
 }
 
@@ -83,6 +102,13 @@ impl<T: ?Sized> DeviceNode<T> {
 
     pub fn dev(&self) -> &T {
         &self.dev
+    }
+
+    pub fn when_disconnected(&self) -> Future<()> {
+        self.disconnect_event
+            .lock()
+            .as_ref()
+            .map_or_else(|| Future::done(()), |w| w.as_future())
     }
 }
 

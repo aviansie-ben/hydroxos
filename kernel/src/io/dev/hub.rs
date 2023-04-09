@@ -85,7 +85,7 @@ impl VirtualDeviceHubInternals {
     unsafe fn on_disconnected(&mut self) {
         self.own_ref = Weak::new();
         for child in self.children.drain(..) {
-            child.dev.on_disconnected();
+            child.disconnect();
         }
     }
 

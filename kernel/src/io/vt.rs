@@ -247,6 +247,15 @@ impl VirtualTerminalManagerInternals {
         self.displays[0].0.dev().redraw(&self.terminals[0].dev().0.lock());
     }
 
+    unsafe fn on_disconnected(&mut self) {
+        for t in self.terminals.iter() {
+            t.disconnect();
+        }
+
+        self.terminals = vec![];
+        self.displays = vec![];
+    }
+
     fn for_terminals(&self, f: &mut dyn FnMut(&DeviceRef<dyn Device>) -> bool) -> bool {
         for t in self.terminals.iter() {
             let t: DeviceRef<dyn Device> = t.clone();
@@ -292,6 +301,10 @@ impl DeviceHub for VirtualTerminalManager {
 impl Device for VirtualTerminalManager {
     unsafe fn on_connected(&self, own_ref: &DeviceRef<VirtualTerminalManager>) {
         self.internal.lock().on_connected(own_ref);
+    }
+
+    unsafe fn on_disconnected(&self) {
+        self.internal.lock().on_disconnected();
     }
 }
 
