@@ -56,7 +56,7 @@ pub(crate) unsafe fn init_phase_1(boot_info: &BootInfo) {
     let vga_text = crate::io::dev::device_root()
         .dev()
         .add_device(DeviceNode::new(Box::from("vgatext"), VgaTextBufferDevice::for_primary_display()));
-    crate::io::vt::init(vga_text, 1);
+    crate::io::vt::init(vga_text);
 
     gdt::init();
     interrupt::init_bsp();

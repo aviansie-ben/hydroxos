@@ -1,12 +1,17 @@
 use alloc::boxed::Box;
-use alloc::sync::Arc;
+use alloc::vec;
 use alloc::vec::Vec;
 use core::iter::FromIterator;
 
+use dyn_dyn::dyn_dyn_impl;
+
+use super::dev::hub::{DeviceHub, DeviceHubLockedError};
+use super::dev::{Device, DeviceNode};
 use crate::io::ansi::{AnsiColor, AnsiParser, AnsiParserAction, AnsiParserSgrAction};
-use crate::io::dev::DeviceRef;
+use crate::io::dev::{device_root, DeviceRef};
 use crate::io::tty::Tty;
 use crate::sync::{Future, UninterruptibleSpinlock};
+use crate::util::SharedUnsafeCell;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VTChar {
@@ -152,13 +157,12 @@ impl VirtualTerminalInternals {
     }
 
     fn redraw(&self) {
-        VIRTUAL_DISPLAYS.with_lock(|virtual_displays| {
-            for &mut (ref mut display, vt_id) in virtual_displays.iter_mut() {
-                if vt_id == self.id {
-                    display.dev().redraw(self);
-                };
-            }
-        });
+        let vtmgr = get_global_manager().dev().internal.lock();
+        for &(ref display, vt_id) in vtmgr.displays.iter() {
+            if vt_id == self.id {
+                display.dev().redraw(self);
+            };
+        }
     }
 }
 
@@ -185,6 +189,9 @@ impl Tty for VirtualTerminal {
         Future::done(Err(()))
     }
 }
+
+#[dyn_dyn_impl(Tty)]
+impl Device for VirtualTerminal {}
 
 impl VirtualTerminal {
     pub fn new(id: usize, width: usize, height: usize) -> VirtualTerminal {
@@ -214,62 +221,116 @@ impl VirtualTerminal {
     }
 }
 
-pub trait TerminalDisplay: Send + Sync {
+pub trait TerminalDisplay: Device {
     fn size(&self) -> (usize, usize);
     fn clear(&self);
     fn redraw(&self, vt: &VirtualTerminalInternals);
 }
 
-static VIRTUAL_TERMINALS: UninterruptibleSpinlock<Vec<Arc<VirtualTerminal>>> = UninterruptibleSpinlock::new(Vec::new());
-static VIRTUAL_DISPLAYS: UninterruptibleSpinlock<Vec<(DeviceRef<dyn TerminalDisplay>, usize)>> = UninterruptibleSpinlock::new(Vec::new());
-
-pub fn init(primary_display: DeviceRef<dyn TerminalDisplay>, num_terminals: usize) {
-    assert!(num_terminals > 0);
-
-    let (width, height) = primary_display.dev().size();
-
-    VIRTUAL_DISPLAYS.with_lock(|virtual_displays| {
-        assert!(virtual_displays.is_empty());
-
-        virtual_displays.reserve_exact(1);
-        virtual_displays.push((primary_display, 0));
-    });
-    VIRTUAL_TERMINALS.with_lock(|virtual_terminals| {
-        assert!(virtual_terminals.is_empty());
-
-        virtual_terminals.reserve_exact(num_terminals);
-        for i in 0..num_terminals {
-            virtual_terminals.push(Arc::new(VirtualTerminal::new(i, width, height)));
-        }
-
-        virtual_terminals[0].0.with_lock(|vt| {
-            VIRTUAL_DISPLAYS.with_lock(|virtual_displays| {
-                virtual_displays[0].0.dev().redraw(vt);
-            });
-        });
-    });
+#[derive(Debug)]
+struct VirtualTerminalManagerInternals {
+    terminals: Vec<DeviceRef<VirtualTerminal>>,
+    displays: Vec<(DeviceRef<dyn TerminalDisplay>, usize)>
 }
 
-pub fn get_terminal(id: usize) -> Option<Arc<VirtualTerminal>> {
-    VIRTUAL_TERMINALS.with_lock(|virtual_terminals| virtual_terminals.get(id).cloned())
+impl VirtualTerminalManagerInternals {
+    unsafe fn on_connected(&mut self, own_ref: &DeviceRef<VirtualTerminalManager>) {
+        assert!(!self.displays.is_empty());
+
+        let (width, height) = self.displays[0].0.dev().size();
+
+        self.terminals.push(
+            DeviceNode::new(Box::from("vt0"), VirtualTerminal::new(0, width, height))
+                .connect(DeviceRef::<VirtualTerminalManager>::downgrade(own_ref))
+        );
+
+        self.displays[0].0.dev().redraw(&self.terminals[0].dev().0.lock());
+    }
+
+    fn for_terminals(&self, f: &mut dyn FnMut(&DeviceRef<dyn Device>) -> bool) -> bool {
+        for t in self.terminals.iter() {
+            let t: DeviceRef<dyn Device> = t.clone();
+            if !f(&t) {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+#[derive(Debug)]
+pub struct VirtualTerminalManager {
+    internal: UninterruptibleSpinlock<VirtualTerminalManagerInternals>
+}
+
+impl VirtualTerminalManager {
+    fn new(primary_display: DeviceRef<dyn TerminalDisplay>) -> VirtualTerminalManager {
+        VirtualTerminalManager {
+            internal: UninterruptibleSpinlock::new(VirtualTerminalManagerInternals {
+                terminals: vec![],
+                displays: vec![(primary_display, 0)]
+            })
+        }
+    }
+}
+
+impl DeviceHub for VirtualTerminalManager {
+    fn for_children(&self, f: &mut dyn FnMut(&DeviceRef<dyn Device>) -> bool) -> bool {
+        self.internal.lock().for_terminals(f)
+    }
+
+    fn try_for_children(&self, f: &mut dyn FnMut(&DeviceRef<dyn Device>) -> bool) -> Result<bool, DeviceHubLockedError> {
+        match self.internal.try_lock() {
+            Some(internal) => Ok(internal.for_terminals(f)),
+            None => Err(DeviceHubLockedError)
+        }
+    }
+}
+
+#[dyn_dyn_impl(DeviceHub)]
+impl Device for VirtualTerminalManager {
+    unsafe fn on_connected(&self, own_ref: &DeviceRef<VirtualTerminalManager>) {
+        self.internal.lock().on_connected(own_ref);
+    }
+}
+
+static VT_MANAGER: SharedUnsafeCell<Option<DeviceRef<VirtualTerminalManager>>> = SharedUnsafeCell::new(None);
+
+pub unsafe fn init(primary_display: DeviceRef<dyn TerminalDisplay>) {
+    assert!((*VT_MANAGER.get()).is_none());
+
+    *VT_MANAGER.get() = Some(
+        device_root()
+            .dev()
+            .add_device(DeviceNode::new(Box::from("vtmgr"), VirtualTerminalManager::new(primary_display)))
+    );
+}
+
+pub fn get_global_manager() -> &'static DeviceRef<VirtualTerminalManager> {
+    unsafe { (*VT_MANAGER.get()).as_ref().unwrap() }
+}
+
+pub fn get_terminal(id: usize) -> Option<DeviceRef<VirtualTerminal>> {
+    let vtmgr = get_global_manager().dev().internal.lock();
+    vtmgr.terminals.get(id).cloned()
 }
 
 pub fn switch_display(display_id: usize, terminal_id: usize) -> bool {
-    VIRTUAL_TERMINALS.with_lock(|virtual_terminals| {
-        if terminal_id < virtual_terminals.len() {
-            virtual_terminals[terminal_id].0.with_lock(|vt| {
-                VIRTUAL_DISPLAYS.with_lock(|virtual_displays| {
-                    if display_id < virtual_displays.len() {
-                        virtual_displays[display_id].1 = terminal_id;
-                        virtual_displays[display_id].0.dev().redraw(vt);
-                        true
-                    } else {
-                        false
-                    }
-                })
-            })
-        } else {
-            false
-        }
-    })
+    let mut vtmgr = get_global_manager().dev().internal.lock();
+
+    if terminal_id < vtmgr.terminals.len() {
+        let vtmgr = &mut *vtmgr;
+        vtmgr.terminals[terminal_id].dev().0.with_lock(|vt| {
+            if display_id < vtmgr.displays.len() {
+                vtmgr.displays[display_id].1 = terminal_id;
+                vtmgr.displays[display_id].0.dev().redraw(vt);
+                true
+            } else {
+                false
+            }
+        })
+    } else {
+        false
+    }
 }

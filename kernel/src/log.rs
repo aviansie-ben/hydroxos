@@ -1,13 +1,13 @@
 use alloc::string::String;
-use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
 use crate::io::ansi::AnsiColor;
+use crate::io::dev::DeviceRef;
 use crate::io::tty::Tty;
 use crate::sync::{Future, UninterruptibleSpinlock};
 
-static OUT_TTY: UninterruptibleSpinlock<Vec<Arc<dyn Tty + Send + Sync>>> = UninterruptibleSpinlock::new(vec![]);
+static OUT_TTY: UninterruptibleSpinlock<Vec<DeviceRef<dyn Tty + Send + Sync>>> = UninterruptibleSpinlock::new(vec![]);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LogLevel {
@@ -43,14 +43,14 @@ impl LogLevel {
     }
 }
 
-pub fn init(out: Arc<dyn Tty + Send + Sync>) {
+pub fn init(out: DeviceRef<dyn Tty + Send + Sync>) {
     OUT_TTY.lock().push(out);
 }
 
 pub fn log_msg(msg: String) {
     Future::all(OUT_TTY.lock().iter().map(|tty| {
         // SAFETY: Backing memory for msg is kept alive until all writes are completed by moving it into the when_resolved closure
-        unsafe { tty.write(msg.as_bytes()).without_val() }
+        unsafe { tty.dev().write(msg.as_bytes()).without_val() }
     }))
     .when_resolved(move |_| drop(msg))
 }

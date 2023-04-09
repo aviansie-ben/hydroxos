@@ -3,8 +3,10 @@ use core::panic::PanicInfo;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
 
+use dyn_dyn::dyn_dyn_impl;
 use uart_16550::SerialPort;
 
+use crate::io::dev::{device_root, Device, DeviceNode};
 use crate::io::tty::Tty;
 use crate::sched::is_handling_interrupt;
 use crate::sched::task::{Process, Thread};
@@ -22,6 +24,7 @@ static TEST_FAILED: AtomicBool = AtomicBool::new(false);
 static TEST_IDX: AtomicUsize = AtomicUsize::new(0);
 static TEST_THREAD: AtomicPtr<Thread> = AtomicPtr::new(ptr::null_mut());
 
+#[derive(Debug)]
 pub struct TestLogTty;
 
 impl Tty for TestLogTty {
@@ -48,6 +51,9 @@ impl Tty for TestLogTty {
     }
 }
 
+#[dyn_dyn_impl(Tty)]
+impl Device for TestLogTty {}
+
 pub trait Test: Sync {
     fn run(&self);
 }
@@ -68,12 +74,12 @@ impl<T: Fn() + Sync> Test for T {
 }
 
 pub fn init_test_log() {
-    use alloc::sync::Arc;
+    use alloc::boxed::Box;
 
     use crate::log;
 
     TEST_SERIAL.lock().init();
-    log::init(Arc::new(TestLogTty));
+    log::init(device_root().dev().add_device(DeviceNode::new(Box::from("testlog"), TestLogTty)));
 }
 
 pub fn run_tests(tests: &'static [&dyn Test]) -> ! {
