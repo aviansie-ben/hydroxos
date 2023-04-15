@@ -171,14 +171,13 @@ pub struct VirtualTerminal(UninterruptibleSpinlock<VirtualTerminalInternals>);
 
 impl Tty for VirtualTerminal {
     unsafe fn write(&self, bytes: *const [u8]) -> Future<Result<(), ()>> {
-        self.0.with_lock(|vt| {
-            for i in 0..bytes.len() {
-                vt.write_byte((*bytes)[i]);
-            }
+        let mut vt = self.0.lock();
+        for i in 0..bytes.len() {
+            vt.write_byte((*bytes)[i]);
+        }
 
-            vt.redraw();
-            Future::done(Ok(()))
-        })
+        vt.redraw();
+        Future::done(Ok(()))
     }
 
     unsafe fn flush(&self) -> Future<Result<(), ()>> {
@@ -292,15 +291,15 @@ impl VirtualTerminalManager {
 
         if terminal_id < vtmgr.terminals.len() {
             let vtmgr = &mut *vtmgr;
-            vtmgr.terminals[terminal_id].dev().0.with_lock(|vt| {
-                if display_id < vtmgr.displays.len() {
-                    vtmgr.displays[display_id].1 = terminal_id;
-                    vtmgr.displays[display_id].0.dev().redraw(vt);
-                    true
-                } else {
-                    false
-                }
-            })
+            let vt = vtmgr.terminals[terminal_id].dev().0.lock();
+
+            if display_id < vtmgr.displays.len() {
+                vtmgr.displays[display_id].1 = terminal_id;
+                vtmgr.displays[display_id].0.dev().redraw(&*vt);
+                true
+            } else {
+                false
+            }
         } else {
             false
         }

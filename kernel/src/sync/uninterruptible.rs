@@ -225,25 +225,6 @@ impl<T: ?Sized> UninterruptibleSpinlock<T> {
             .try_lock()
             .map(|guard| UninterruptibleSpinlockGuard(guard, interrupt_disabler, SpinlockTracker::new(self as *const _ as *const ())))
     }
-
-    /// Disables interrupts and locks this [`UninterruptibleSpinlock`], then calls the provided function with the underlying data. Once the
-    /// callback returns, interrupts are re-enabled (if applicable) and the spinlock is re-locked.
-    pub fn with_lock<U>(&self, f: impl FnOnce(&mut T) -> U) -> U {
-        let mut lock = self.lock();
-        f(lock.deref_mut())
-    }
-
-    /// Disables interrupts and attempts to lock this [`UninterruptibleSpinlock`], then calls the provided function with the underlying data
-    /// if the lock was successfully obtained. If the attempt to lock this spinlock was not successful, the provided function will be called
-    /// with `None`. If interrupts were enabled when calling this method and the operation was not successful, interrupts are re-enabled
-    /// _before_ the provided functions is called.
-    pub fn try_with_lock<U>(&self, f: impl FnOnce(Option<&mut T>) -> U) -> U {
-        if let Some(mut lock) = self.try_lock() {
-            f(Some(lock.deref_mut()))
-        } else {
-            f(None)
-        }
-    }
 }
 
 /// A guard that provides access to an [`UninterruptibleSpinlock`]'s internals. Releases the spinlock (and re-enables interrupts if
