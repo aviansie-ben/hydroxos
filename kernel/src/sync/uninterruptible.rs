@@ -169,17 +169,21 @@ cfg_if::cfg_if! {
 
 /// A spinlock that keeps interrupts disabled on the local CPU core while it is locked.
 #[derive(Debug)]
-pub struct UninterruptibleSpinlock<T: ?Sized>(spin::Mutex<T>);
+pub struct UninterruptibleSpinlock<T: ?Sized>(spin::mutex::SpinMutex<T>);
 
 impl<T> UninterruptibleSpinlock<T> {
     /// Creates a new uninterruptible spinlock containing the provided value.
     pub const fn new(val: T) -> UninterruptibleSpinlock<T> {
-        UninterruptibleSpinlock(spin::Mutex::new(val))
+        UninterruptibleSpinlock(spin::mutex::SpinMutex::new(val))
     }
 
     /// Consumes this [`UninterruptibleSpinlock`], returning the underlying data.
     pub fn into_inner(self) -> T {
         self.0.into_inner()
+    }
+
+    pub fn is_guarded_by(&self, guard: &UninterruptibleSpinlockGuard<T>) -> bool {
+        ptr::eq(self.0.as_mut_ptr(), &*guard.0)
     }
 }
 
@@ -244,7 +248,7 @@ impl<T: ?Sized> UninterruptibleSpinlock<T> {
 
 /// A guard that provides access to an [`UninterruptibleSpinlock`]'s internals. Releases the spinlock (and re-enables interrupts if
 /// applicable) when dropped.
-pub struct UninterruptibleSpinlockGuard<'a, T: ?Sized>(spin::MutexGuard<'a, T>, InterruptDisabler, SpinlockTracker);
+pub struct UninterruptibleSpinlockGuard<'a, T: ?Sized>(spin::mutex::SpinMutexGuard<'a, T>, InterruptDisabler, SpinlockTracker);
 
 impl<'a, T: ?Sized> Deref for UninterruptibleSpinlockGuard<'a, T> {
     type Target = T;
@@ -407,5 +411,20 @@ mod test {
                 skip("spinlock tracking disabled");
             }
         }
+    }
+
+    #[test_case]
+    fn test_spinlock_is_guarded_by() {
+        let lock1 = UninterruptibleSpinlock::new(());
+        let lock2 = UninterruptibleSpinlock::new(());
+
+        let lock1_guard = lock1.lock();
+        let lock2_guard = lock2.lock();
+
+        assert!(lock1.is_guarded_by(&lock1_guard));
+        assert!(!lock1.is_guarded_by(&lock2_guard));
+
+        assert!(!lock2.is_guarded_by(&lock1_guard));
+        assert!(lock2.is_guarded_by(&lock2_guard));
     }
 }
