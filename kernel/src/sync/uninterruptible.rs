@@ -326,7 +326,13 @@ impl<T: ?Sized> UninterruptibleSpinlock<T> {
 
     /// Checks whether this [`UninterruptibleSpinlock`] is currently being locked by the provided
     /// guard.
-    pub fn is_guarded_by(&self, guard: &UninterruptibleSpinlockGuard<T>) -> bool {
+    pub fn is_guarded_by<U: ?Sized>(&self, guard: &UninterruptibleSpinlockGuard<U>) -> bool {
+        self.0.is_guarded_by(&guard.0)
+    }
+
+    /// Checks whether this [`UninterruptibleSpinlock`] is currently being locked by the provided
+    /// guard.
+    pub fn is_read_guarded_by<U: ?Sized>(&self, guard: &UninterruptibleSpinlockReadGuard<U>) -> bool {
         self.0.is_guarded_by(&guard.0)
     }
 
@@ -379,6 +385,19 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for UninterruptibleSpinlock<T> {
 /// applicable) when dropped.
 pub struct UninterruptibleSpinlockGuard<'a, T: ?Sized>(RawSpinlockGuard<'a>, &'a mut T, InterruptDisabler);
 
+impl<'a, T: ?Sized + 'a> UninterruptibleSpinlockGuard<'a, T> {
+    /// Maps the data referenced by this guard, returning a guard that guards the same spinlock but
+    /// returns the newly mapped data when dereferenced.
+    pub fn map<U: ?Sized, Guard>(guard: Guard, f: impl FnOnce(&mut T) -> &mut U) -> UninterruptibleSpinlockGuard<'a, U>
+    where
+        Self: From<Guard>
+    {
+        let Self(guard, data, interrupt_disabler) = Self::from(guard);
+
+        UninterruptibleSpinlockGuard(guard, f(data), interrupt_disabler)
+    }
+}
+
 impl<'a, T: ?Sized> Deref for UninterruptibleSpinlockGuard<'a, T> {
     type Target = T;
 
@@ -396,6 +415,45 @@ impl<'a, T: ?Sized> DerefMut for UninterruptibleSpinlockGuard<'a, T> {
 impl<'a, T: ?Sized + fmt::Debug> fmt::Debug for UninterruptibleSpinlockGuard<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "UninterruptibleSpinlockGuard@{:p}({:?})", self.0.get_lock(), self.1)
+    }
+}
+
+/// A guard that provides read-only access to an [`UninterruptibleSpinlock`]'s internals. Releases
+/// the spinlock (and re-enables interrupts if applicable) when dropped.
+pub struct UninterruptibleSpinlockReadGuard<'a, T: ?Sized>(RawSpinlockGuard<'a>, &'a T, InterruptDisabler);
+
+impl<'a, T: ?Sized + 'a> UninterruptibleSpinlockReadGuard<'a, T> {
+    /// Maps the data referenced by this guard, returning a guard that guards the same spinlock but
+    /// returns the newly mapped data when dereferenced.
+    pub fn map<U: ?Sized, Guard>(guard: Guard, f: impl FnOnce(&T) -> &U) -> UninterruptibleSpinlockReadGuard<'a, U>
+    where
+        Self: From<Guard>
+    {
+        let Self(guard, data, interrupt_disabler) = Self::from(guard);
+
+        UninterruptibleSpinlockReadGuard(guard, f(data), interrupt_disabler)
+    }
+}
+
+impl<'a, T: ?Sized> From<UninterruptibleSpinlockGuard<'a, T>> for UninterruptibleSpinlockReadGuard<'a, T> {
+    fn from(value: UninterruptibleSpinlockGuard<'a, T>) -> Self {
+        let UninterruptibleSpinlockGuard(guard, data, interrupt_disabler) = value;
+
+        Self(guard, data, interrupt_disabler)
+    }
+}
+
+impl<'a, T: ?Sized> Deref for UninterruptibleSpinlockReadGuard<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.1
+    }
+}
+
+impl<'a, T: ?Sized + fmt::Debug> fmt::Debug for UninterruptibleSpinlockReadGuard<'a, T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "UninterruptibleSpinlockReadGuard@{:p}({:?})", self.0.get_lock(), self.1)
     }
 }
 
@@ -561,5 +619,32 @@ mod test {
 
         assert!(!lock2.is_guarded_by(&lock1_guard));
         assert!(lock2.is_guarded_by(&lock2_guard));
+    }
+
+    #[test_case]
+    fn test_spinlock_guard_map() {
+        let mut lock = UninterruptibleSpinlock::new((0, 0));
+        let p0 = &lock.get_mut().0 as *const _;
+        let p1 = &lock.get_mut().1 as *const _;
+
+        let guard = UninterruptibleSpinlockGuard::map(lock.lock(), |r| &mut r.0);
+
+        assert!(lock.is_locked());
+        assert!(lock.is_guarded_by(&guard));
+        drop(guard);
+        assert!(!lock.is_locked());
+
+        let guard = UninterruptibleSpinlockReadGuard::map(lock.lock(), |r| &r.0);
+
+        assert!(lock.is_locked());
+        assert!(lock.is_read_guarded_by(&guard));
+        drop(guard);
+        assert!(!lock.is_locked());
+
+        assert_eq!(p0, &*UninterruptibleSpinlockGuard::map(lock.lock(), |r| &mut r.0) as *const _);
+        assert_eq!(p1, &*UninterruptibleSpinlockGuard::map(lock.lock(), |r| &mut r.1) as *const _);
+
+        assert_eq!(p0, &*UninterruptibleSpinlockReadGuard::map(lock.lock(), |r| &r.0) as *const _);
+        assert_eq!(p1, &*UninterruptibleSpinlockReadGuard::map(lock.lock(), |r| &r.1) as *const _);
     }
 }
