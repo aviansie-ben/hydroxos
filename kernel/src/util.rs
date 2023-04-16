@@ -5,7 +5,8 @@ use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
 
 #[repr(transparent)]
-pub struct SharedUnsafeCell<T>(pub UnsafeCell<T>);
+#[derive(Debug)]
+pub struct SharedUnsafeCell<T: ?Sized>(pub UnsafeCell<T>);
 
 impl<T> SharedUnsafeCell<T> {
     pub const fn new(val: T) -> Self {
@@ -13,7 +14,7 @@ impl<T> SharedUnsafeCell<T> {
     }
 }
 
-impl<T> Deref for SharedUnsafeCell<T> {
+impl<T: ?Sized> Deref for SharedUnsafeCell<T> {
     type Target = UnsafeCell<T>;
 
     fn deref(&self) -> &Self::Target {
