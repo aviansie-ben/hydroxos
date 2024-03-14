@@ -178,6 +178,7 @@ pub(super) unsafe fn init_kernel_addrspace() {
     assert_eq!(kernel_addrspace.page_table, PhysAddr::zero());
 
     *kernel_addrspace = AddressSpace::new_kernel();
+    kernel_addrspace.init_kernel_virtual_alloc();
 
     let mut kl4_table = kernel_addrspace.as_page_table();
 
@@ -206,6 +207,4 @@ pub(super) unsafe fn init_kernel_addrspace() {
 
         x86_64::instructions::tlb::flush_all();
     }
-
-    kernel_addrspace.init_kernel_virtual_alloc();
 }
