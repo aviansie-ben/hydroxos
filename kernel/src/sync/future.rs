@@ -79,6 +79,17 @@ impl<T> FutureWait<T> {
     unsafe fn destroy(ptr: *const FutureWait<T>) {
         drop(Box::from_raw(ptr as *mut FutureWait<T>));
     }
+
+    unsafe fn take_val(&self, lock: &mut FutureWaitGenericLock) -> T {
+        assert!(self.generic.state.is_guarded_by(&lock.state));
+        assert!(lock.state.val_refs > 0);
+
+        if lock.state.val_refs == 0 {
+            ptr::read((*self.val.get()).as_ptr())
+        } else {
+            crate::util::clone_or_panic(&*(*self.val.get()).as_ptr())
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -138,19 +149,8 @@ impl<T> Future<T> {
                 let mut wait = (*ptr).generic.lock();
 
                 if wait.state.resolved {
-                    wait.state.wait_refs -= 1;
-                    wait.state.val_refs -= 1;
-
-                    let val = if wait.state.val_refs == 0 {
-                        ptr::read((*(*ptr).val.get()).as_ptr())
-                    } else {
-                        crate::util::clone_or_panic(&*(*(*ptr).val.get()).as_ptr())
-                    };
-
-                    if wait.state.wait_refs == 0 {
-                        drop(wait);
-                        FutureWait::destroy(ptr);
-                    }
+                    let val = (*ptr).take_val(&mut wait);
+                    Future::dec_wait_ref(ptr, wait);
 
                     self.0 = FutureInternal::Done(val);
                     Ok(f)
@@ -159,15 +159,10 @@ impl<T> Future<T> {
                 }
             },
             FutureInternal::WaitingNoVal(ptr, ref freer) => unsafe {
-                let mut wait = (*ptr).lock();
+                let wait = (*ptr).lock();
 
                 if wait.state.resolved {
-                    wait.state.wait_refs -= 1;
-
-                    if wait.state.wait_refs == 0 {
-                        drop(wait);
-                        (freer.free_fn)(freer.ptr);
-                    }
+                    Future::dec_wait_ref_generic(freer, wait);
 
                     self.0 = FutureInternal::Done(crate::util::unit_or_panic());
                     Ok(f)
@@ -283,7 +278,7 @@ impl<T> Future<T> {
     }
 
     /// Runs the provided callback when this [`Future`] is resolved. This callback will be run immediately if the future is already
-    /// resolved. Otherwise, it will be run when [`FutureWriter::finish`] is called, from the context of the code that calls this method.
+    /// resolved. Otherwise, it will be run when [`FutureWriter::finish`] is called, from the context of the code that calls that method.
     /// As a result, the provided callback may be run in a different thread than the current thread or even in the context of an interrupt
     /// handler.
     ///
@@ -340,6 +335,16 @@ impl<T> Future<T> {
 }
 
 impl Future<()> {
+    unsafe fn dec_wait_ref_generic(freer: &FutureWaitFreer, mut wait: FutureWaitGenericLock) {
+        wait.state.wait_refs -= 1;
+        if wait.state.wait_refs != 0 {
+            wait.wait.wake_all();
+        } else {
+            drop(wait);
+            (freer.free_fn)(freer.ptr);
+        }
+    }
+
     /// Creates a future that resolves once all of the futures in the provided iterator have resolved.
     pub fn all(fs: impl IntoIterator<Item = Future<()>>) -> Future<()> {
         let (future, writer) = Future::new();
