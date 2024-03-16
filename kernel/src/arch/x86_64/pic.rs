@@ -27,22 +27,26 @@ pub(super) unsafe fn remap_pic(master_off: u8, slave_off: u8) {
     // Send ICW1 to reset the PICs. Bit 0x10 signifies that this is an ICW1 and that the PIC should reset and bit 0x01 signifies that ICW4
     // will be sent later.
     master_pic_command_port.write(0x11);
+    io_wait();
     slave_pic_command_port.write(0x11);
     io_wait();
 
     // Send ICW2 to tell the PICs which IDT offsets should be used.
     master_pic_data_port.write(master_off);
+    io_wait();
     slave_pic_data_port.write(slave_off);
     io_wait();
 
     // Send ICW3 to tell the PICs about each other and configure IRQ chaining via the IRQ2 line.
     master_pic_data_port.write(0x04);
+    io_wait();
     slave_pic_data_port.write(0x02);
     io_wait();
 
     // Send ICW4 to tell the PICs which mode to operate in. In this case, 8086 mode is used, automatic EOI is disabled, the PICs should
     // operate in non-buffered mode, and special fully nested mode is disabled.
     master_pic_data_port.write(0x01);
+    io_wait();
     slave_pic_data_port.write(0x01);
     io_wait();
 
