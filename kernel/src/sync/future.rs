@@ -359,32 +359,36 @@ impl<T: 'static> Future<T> {
                     let ptr = SendPtr::new(ptr);
 
                     if !wait.state.resolved {
-                        wait.state.actions.push(Box::new(move |_, _| sched::enqueue_soft_interrupt(move || {
-                            let ptr = ptr.unwrap();
-                            let val = unsafe {
-                                let mut wait = (*ptr).generic.lock();
-                                let val = (*ptr).take_val(&mut wait);
-                                Future::dec_wait_ref(ptr, wait);
-                                val
-                            };
+                        wait.state.actions.push(Box::new(move |_, _| {
+                            sched::enqueue_soft_interrupt(move || {
+                                let ptr = ptr.unwrap();
+                                let val = unsafe {
+                                    let mut wait = (*ptr).generic.lock();
+                                    let val = (*ptr).take_val(&mut wait);
+                                    Future::dec_wait_ref(ptr, wait);
+                                    val
+                                };
 
-                            f(val);
-                        })));
+                                f(val);
+                            })
+                        }));
                         break;
                     }
-                }
+                },
                 FutureInternal::WaitingNoVal(ptr, freer) => {
                     let mut wait = unsafe { &*ptr }.lock();
                     let ptr = SendPtr::new(ptr);
 
                     if !wait.state.resolved {
-                        wait.state.actions.push(Box::new(move |_, _| sched::enqueue_soft_interrupt(move || {
-                            let ptr = ptr.unwrap();
-                            unsafe {
-                                Future::dec_wait_ref_generic(&freer, (*ptr).lock());
-                            }
-                            f(crate::util::unit_or_panic());
-                        })));
+                        wait.state.actions.push(Box::new(move |_, _| {
+                            sched::enqueue_soft_interrupt(move || {
+                                let ptr = ptr.unwrap();
+                                unsafe {
+                                    Future::dec_wait_ref_generic(&freer, (*ptr).lock());
+                                }
+                                f(crate::util::unit_or_panic());
+                            })
+                        }));
                         break;
                     }
                 }

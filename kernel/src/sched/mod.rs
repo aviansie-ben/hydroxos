@@ -3,9 +3,8 @@
 //! This module contains the kernel's scheduler, which is responsible for keeping track of processes and threads running on the machine and
 //! facilitating context switching between them from interrupt handlers.
 
-use core::cell::UnsafeCell;
-
 use alloc::{boxed::Box, vec, vec::Vec};
+use core::cell::UnsafeCell;
 
 use crate::{arch::interrupt::InterruptFrame, sync::uninterruptible::InterruptDisabler};
 
@@ -25,7 +24,7 @@ pub unsafe fn init() {
 static IN_INTERRUPT: UnsafeCell<bool> = UnsafeCell::new(false);
 
 #[thread_local]
-static SOFT_INTERRUPTS: UnsafeCell<Vec<Box<dyn FnOnce ()>>> = UnsafeCell::new(vec![]);
+static SOFT_INTERRUPTS: UnsafeCell<Vec<Box<dyn FnOnce()>>> = UnsafeCell::new(vec![]);
 
 /// Notifies the scheduler that an asynchronous hardware interrupt handler has begun.
 ///
@@ -61,7 +60,7 @@ pub(crate) unsafe fn end_interrupt() {
 /// # Panics
 ///
 /// A panic will occur when running the soft interrupt if it attempts to perform a blocking operation.
-pub fn enqueue_soft_interrupt<F: FnOnce () + 'static>(f: F) {
+pub fn enqueue_soft_interrupt<F: FnOnce() + 'static>(f: F) {
     if !is_handling_interrupt() && x86_64::instructions::interrupts::are_enabled() {
         let _interrupts_disabled = InterruptDisabler::new();
         f();
@@ -133,10 +132,9 @@ pub unsafe fn perform_context_switch_interrupt(old_thread_lock: Option<task::Thr
 
 #[cfg(test)]
 mod test {
+    use alloc::rc::Rc;
     use core::cell::Cell;
     use core::sync::atomic::{AtomicBool, Ordering};
-
-    use alloc::rc::Rc;
 
     use super::task::*;
     use crate::sync::uninterruptible::InterruptDisabler;
