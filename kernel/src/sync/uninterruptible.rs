@@ -400,6 +400,19 @@ impl<'a, T: ?Sized + 'a> UninterruptibleSpinlockGuard<'a, T> {
 
         UninterruptibleSpinlockGuard(guard, f(data), interrupt_disabler)
     }
+
+    /// Changes this guard to point to data unrelated to the original data referenced by it,
+    /// returning a guard that guards the same spinlock but returns references to the provided
+    /// reference when dereferenced.
+    pub fn replace_data<'b, U: ?Sized, Guard>(guard: Guard, data: &'b mut U) -> UninterruptibleSpinlockGuard<'b, U>
+    where
+        'a: 'b,
+        Self: From<Guard>
+    {
+        let Self(guard, _, interrupt_disabler) = Self::from(guard);
+
+        UninterruptibleSpinlockGuard(guard, data, interrupt_disabler)
+    }
 }
 
 impl<'a, T: ?Sized> Deref for UninterruptibleSpinlockGuard<'a, T> {
