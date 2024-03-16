@@ -23,9 +23,10 @@ pub trait DeviceHub: Device {
 pub trait DeviceHubExt: DeviceHub {
     fn collect_children(&self, children: &mut Vec<DeviceRef<dyn Device>>);
     fn children(&self) -> Vec<DeviceRef<dyn Device>>;
+    fn find_child(&self, name: &str) -> Option<DeviceRef<dyn Device>>;
 }
 
-impl<T: DeviceHub> DeviceHubExt for T {
+impl<T: DeviceHub + ?Sized> DeviceHubExt for T {
     fn collect_children(&self, children: &mut Vec<DeviceRef<dyn Device>>) {
         self.for_children(&mut |c| {
             children.push(c.clone());
@@ -37,6 +38,21 @@ impl<T: DeviceHub> DeviceHubExt for T {
         let mut children = vec![];
         self.collect_children(&mut children);
         children
+    }
+
+    fn find_child(&self, name: &str) -> Option<DeviceRef<dyn Device>> {
+        let mut dev = None;
+
+        self.for_children(&mut |child| {
+            if child.name() == name {
+                dev = Some(child.clone());
+                false
+            } else {
+                true
+            }
+        });
+
+        dev
     }
 }
 

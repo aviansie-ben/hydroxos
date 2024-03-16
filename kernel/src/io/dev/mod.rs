@@ -9,7 +9,7 @@ use core::ptr;
 
 use dyn_dyn::{dyn_dyn_base, dyn_dyn_cast, dyn_dyn_impl, DynDynBase, DynDynTable, GetDynDynTable};
 
-use crate::io::dev::hub::{DeviceHub, DeviceHubLockedError, VirtualDeviceHub};
+use crate::io::dev::hub::{DeviceHub, DeviceHubExt, DeviceHubLockedError, VirtualDeviceHub};
 use crate::log;
 use crate::sync::future::FutureWriter;
 use crate::sync::{Future, UninterruptibleSpinlock};
@@ -19,6 +19,8 @@ pub mod hub;
 
 pub type DeviceRef<T> = Arc<DeviceNode<T>>;
 pub type DeviceWeak<T> = Weak<DeviceNode<T>>;
+
+pub struct DeviceNotFoundError;
 
 #[dyn_dyn_base]
 pub trait Device: Send + Sync + Debug + 'static {
@@ -125,15 +127,15 @@ impl<'a, T: ?Sized> fmt::Display for DeviceFullName<'a, T> {
         let DeviceFullName(dev) = *self;
 
         if let Some(parent) = dev.parent.upgrade() {
-            write!(f, "{}::", DeviceFullName(&*parent))?;
+            write!(f, "{}::{}", DeviceFullName(&*parent), dev.name)?;
         } else if !ptr::eq(
             &**device_root() as *const DeviceNode<dyn Device> as *const DeviceNode<()>,
             dev as *const DeviceNode<T> as *const DeviceNode<()>
         ) {
-            write!(f, "(???)::")?;
+            write!(f, "(???)::{}", dev.name)?;
         }
 
-        write!(f, "{}", dev.name)
+        Ok(())
     }
 }
 
@@ -142,7 +144,7 @@ static DEVICE_ROOT: SharedUnsafeCell<Option<DeviceRef<VirtualDeviceHub>>> = Shar
 pub(crate) unsafe fn init_device_root() {
     debug_assert!((*DEVICE_ROOT.get()).is_none());
 
-    let device_root = Arc::new(DeviceNode::new(Box::from("root"), VirtualDeviceHub::new()));
+    let device_root = Arc::new(DeviceNode::new(Box::from("(root)"), VirtualDeviceHub::new()));
 
     device_root.dev.on_connected(&device_root);
     *DEVICE_ROOT.get() = Some(device_root);
@@ -150,6 +152,37 @@ pub(crate) unsafe fn init_device_root() {
 
 pub fn device_root() -> &'static DeviceRef<VirtualDeviceHub> {
     unsafe { (*DEVICE_ROOT.get()).as_ref().unwrap() }
+}
+
+pub fn get_device_by_name(mut name: &str) -> Result<DeviceRef<dyn Device>, DeviceNotFoundError> {
+    let mut hub: DeviceRef<dyn Device> = device_root().clone();
+
+    while let Some(end_part) = name.find("::") {
+        let name_part = &name[..end_part];
+        name = &name[end_part + 2..];
+
+        let hub_dev = if let Ok(hub) = dyn_dyn_cast!(move Device => DeviceHub, hub.dev()) {
+            hub
+        } else {
+            return Err(DeviceNotFoundError);
+        };
+
+        if let Some(dev) = hub_dev.find_child(name_part) {
+            hub = dev;
+        }
+    }
+
+    let hub_dev = if let Ok(hub) = dyn_dyn_cast!(move Device => DeviceHub, hub.dev()) {
+        hub
+    } else {
+        return Err(DeviceNotFoundError);
+    };
+
+    if let Some(dev) = hub_dev.find_child(name) {
+        Ok(dev)
+    } else {
+        Err(DeviceNotFoundError)
+    }
 }
 
 pub fn log_device_tree() {
@@ -216,7 +249,8 @@ pub fn log_device_tree() {
         log!(Debug, "dev", "{}", line);
 
         match children {
-            Some(Ok(children)) => {
+            Some(Ok(mut children)) => {
+                children.sort_by(|a, b| a.name().cmp(b.name()));
                 for child in children {
                     dump_dev(line, &child, indent + 1);
                 }
