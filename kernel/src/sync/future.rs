@@ -10,6 +10,7 @@ use core::mem;
 use core::mem::MaybeUninit;
 use core::ptr;
 
+use crate::sched;
 use crate::sched::task::Thread;
 use crate::sched::wait::ThreadWaitList;
 use crate::sync::uninterruptible::{UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
@@ -92,12 +93,15 @@ impl<T> FutureWait<T> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 struct FutureWaitFreer {
     ptr: *const (),
     free_fn: fn(*const ()),
     _data: PhantomData<dyn Any>
 }
+
+unsafe impl Send for FutureWaitFreer {}
+unsafe impl Sync for FutureWaitFreer {}
 
 #[derive(Debug)]
 enum FutureInternal<T> {
@@ -331,6 +335,65 @@ impl<T> Future<T> {
             drop(wait);
             FutureWait::destroy(ptr);
         }
+    }
+}
+
+impl<T: 'static> Future<T> {
+    /// Runs the provided callback in a soft interrupt after this [`Future`] is resolved.
+    ///
+    /// # Panics
+    ///
+    /// A panic will occur when calling the provided callback if it attempts to perform a blocking operation.
+    pub fn when_resolved_soft(mut self, f: impl FnOnce(T) + Send + 'static) {
+        loop {
+            self.update_readiness();
+
+            let state = mem::replace(&mut self.0, FutureInternal::Waiting(ptr::null(), PhantomData));
+            match state {
+                FutureInternal::Done(val) => {
+                    sched::enqueue_soft_interrupt(move || f(val));
+                    break;
+                },
+                FutureInternal::Waiting(ptr, _) => {
+                    let mut wait = unsafe { &*ptr }.generic.lock();
+                    let ptr = SendPtr::new(ptr);
+
+                    if !wait.state.resolved {
+                        wait.state.actions.push(Box::new(move |_, _| sched::enqueue_soft_interrupt(move || {
+                            let ptr = ptr.unwrap();
+                            let val = unsafe {
+                                let mut wait = (*ptr).generic.lock();
+                                let val = (*ptr).take_val(&mut wait);
+                                Future::dec_wait_ref(ptr, wait);
+                                val
+                            };
+
+                            f(val);
+                        })));
+                        break;
+                    }
+                }
+                FutureInternal::WaitingNoVal(ptr, freer) => {
+                    let mut wait = unsafe { &*ptr }.lock();
+                    let ptr = SendPtr::new(ptr);
+
+                    if !wait.state.resolved {
+                        wait.state.actions.push(Box::new(move |_, _| sched::enqueue_soft_interrupt(move || {
+                            let ptr = ptr.unwrap();
+                            unsafe {
+                                Future::dec_wait_ref_generic(&freer, (*ptr).lock());
+                            }
+                            f(crate::util::unit_or_panic());
+                        })));
+                        break;
+                    }
+                }
+            }
+
+            self.0 = state;
+        }
+
+        mem::forget(self);
     }
 }
 
