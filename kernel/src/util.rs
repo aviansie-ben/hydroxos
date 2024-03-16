@@ -1,6 +1,7 @@
 use alloc::sync::{Arc, Weak};
 use core::cell::UnsafeCell;
 use core::fmt;
+use core::mem::MaybeUninit;
 use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
 
@@ -146,5 +147,210 @@ impl<T: fmt::Display> DisplayAsDebug<T> {
 impl<T: fmt::Display> fmt::Debug for DisplayAsDebug<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+pub struct ArrayDeque<T, const N: usize> {
+    head: usize,
+    len: usize,
+    data: [MaybeUninit<T>; N]
+}
+
+impl<T, const N: usize> ArrayDeque<T, N> {
+    pub fn new() -> Self {
+        Self {
+            head: 0,
+            len: 0,
+            data: MaybeUninit::uninit_array()
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    fn idx(head: usize, idx: usize) -> usize {
+        if idx >= N - head {
+            head.wrapping_sub(N).wrapping_add(idx)
+        } else {
+            head + idx
+        }
+    }
+
+    fn tail_exclusive(&self) -> usize {
+        Self::idx(self.head, self.len)
+    }
+
+    fn tail_inclusive(&self) -> usize {
+        assert!(self.len != 0);
+        Self::idx(self.head, self.len - 1)
+    }
+
+    pub fn pop_front(&mut self) -> Option<T> {
+        if self.len != 0 {
+            // SAFETY: This element is always in-bounds and will no longer be in-bounds after we
+            //         return so it cannot be read again.
+            let elem = unsafe { self.data[self.head].assume_init_read() };
+
+            if self.head == N - 1 {
+                self.head = 0;
+            } else {
+                self.head += 1;
+            }
+
+            Some(elem)
+        } else {
+            None
+        }
+    }
+
+    pub fn pop_back(&mut self) -> Option<T> {
+        if self.len != 0 {
+            // SAFETY: This element is always in-bounds and will no longer be in-bounds after we
+            //         return so it cannot be read again.
+            let elem = unsafe { self.data[self.tail_inclusive()].assume_init_read() };
+
+            self.len -= 1;
+            Some(elem)
+        } else {
+            None
+        }
+    }
+
+    pub fn push_front(&mut self, val: T) -> Result<(), T> {
+        if self.len == N {
+            Err(val)
+        } else {
+            if self.head == 0 {
+                self.head = N - 1;
+            } else {
+                self.head -= 1;
+            }
+
+            self.data[self.head] = MaybeUninit::new(val);
+            self.len += 1;
+            Ok(())
+        }
+    }
+
+    pub fn push_back(&mut self, val: T) -> Result<(), T> {
+        if self.len == N {
+            Err(val)
+        } else {
+            self.data[self.tail_exclusive()] = MaybeUninit::new(val);
+            self.len += 1;
+            Ok(())
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.drain();
+        self.head = 0;
+    }
+
+    pub fn iter(&self) -> ArrayDequeIter<T, N> {
+        ArrayDequeIter(self, self.head, self.len)
+    }
+
+    pub fn drain(&mut self) -> ArrayDequeDrain<T, N> {
+        ArrayDequeDrain(self)
+    }
+}
+
+impl<'a, T, const N: usize> Drop for ArrayDeque<T, N> {
+    fn drop(&mut self) {
+        self.drain();
+    }
+}
+
+impl<'a, T: fmt::Debug, const N: usize> fmt::Debug for ArrayDeque<T, N> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
+    }
+}
+
+impl<'a, T: Clone, const N: usize> Clone for ArrayDeque<T, N> {
+    fn clone(&self) -> Self {
+        let mut new = ArrayDeque::new();
+
+        for val in self.iter() {
+            let _ = new.push_back(val.clone());
+        }
+
+        new
+    }
+}
+
+pub struct ArrayDequeIter<'a, T, const N: usize>(&'a ArrayDeque<T, N>, usize, usize);
+
+impl<'a, T, const N: usize> Iterator for ArrayDequeIter<'a, T, N> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<&'a T> {
+        if self.2 != 0 {
+            let item = &self.0.data[self.1];
+
+            if self.1 == N - 1 {
+                self.1 = 0;
+            } else {
+                self.1 += 1;
+            }
+
+            self.2 -= 1;
+
+            // SAFETY: This element is always in-bounds since self.1 and self.2 start as the bounds
+            //         of the array and only ever shrink while iterating
+            Some(unsafe { item.assume_init_ref() })
+        } else {
+            None
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.0.len, Some(self.0.len))
+    }
+}
+
+impl<'a, T, const N: usize> DoubleEndedIterator for ArrayDequeIter<'a, T, N> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.2 != 0 {
+            self.2 -= 1;
+
+            // SAFETY: This element is always in-bounds since self.1 and self.2 start as the bounds
+            //         of the array and only ever shrink while iterating
+            Some(unsafe { self.0.data[ArrayDeque::<T, N>::idx(self.1, self.2)].assume_init_ref() })
+        } else {
+            None
+        }
+    }
+}
+
+pub struct ArrayDequeDrain<'a, T, const N: usize>(&'a mut ArrayDeque<T, N>);
+
+impl<'a, T, const N: usize> Iterator for ArrayDequeDrain<'a, T, N> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<T> {
+        self.0.pop_front()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.0.len, Some(self.0.len))
+    }
+}
+
+impl<'a, T, const N: usize> DoubleEndedIterator for ArrayDequeDrain<'a, T, N> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.0.pop_back()
+    }
+}
+
+impl<'a, T, const N: usize> Drop for ArrayDequeDrain<'a, T, N> {
+    fn drop(&mut self) {
+        while let Some(_) = self.next() {}
     }
 }

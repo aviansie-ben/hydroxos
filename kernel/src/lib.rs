@@ -5,6 +5,7 @@
 #![feature(const_mut_refs)]
 #![feature(custom_test_frameworks)]
 #![feature(exclusive_range_pattern)]
+#![feature(maybe_uninit_uninit_array)]
 #![feature(naked_functions)]
 #![feature(negative_impls)]
 #![feature(ptr_metadata)]
