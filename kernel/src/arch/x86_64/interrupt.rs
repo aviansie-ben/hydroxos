@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use core::arch::asm;
 use core::mem;
 
@@ -6,7 +7,10 @@ use x86_64::structures::DescriptorTablePointer;
 use x86_64::{PrivilegeLevel, VirtAddr};
 
 use super::regs::{GeneralRegister, SavedBasicRegisters};
+use crate::log;
+use crate::sched::task::Thread;
 use crate::sync::uninterruptible::InterruptDisabler;
+use crate::sync::UninterruptibleSpinlock;
 use crate::util::SharedUnsafeCell;
 
 macro_rules! handler_with_code {
@@ -141,6 +145,14 @@ unsafe extern "C" fn begin_interrupt_common() {
 pub const IRQS_START: u8 = 0x20;
 pub const EXT_START: u8 = 0x30;
 
+pub const NUM_IRQS: usize = (EXT_START - IRQS_START) as usize;
+
+pub type InterruptHandler = Box<dyn FnMut(&mut InterruptFrame) + Send>;
+const EMPTY_INTERRUPT: Option<InterruptHandler> = None;
+
+static IRQ_HANDLERS: UninterruptibleSpinlock<[Option<InterruptHandler>; NUM_IRQS]> =
+    UninterruptibleSpinlock::new([EMPTY_INTERRUPT; NUM_IRQS]);
+
 unsafe extern "C" fn handle_interrupt(frame: &mut InterruptFrame) {
     use crate::sched;
 
@@ -168,6 +180,22 @@ unsafe extern "C" fn handle_interrupt(frame: &mut InterruptFrame) {
 
             sched::perform_context_switch_interrupt(Some(core::ptr::read(frame.rax as *const sched::task::ThreadLock)), frame);
         },
+        IRQS_START..EXT_START => {
+            let mut handlers = IRQ_HANDLERS.lock();
+
+            if let &mut Some(ref mut handler) = &mut handlers[usize::from(interrupt_num - IRQS_START)] {
+                handler(frame);
+
+                // The interrupt may have caused a Thread to wake up, so if this core is currently
+                // idle, attempt a context switch immediately to ensure we aren't sitting around
+                // doing nothing for no reason.
+                if Thread::current_interrupted().is_none() {
+                    sched::perform_context_switch_interrupt(None, frame);
+                }
+            } else {
+                log!(Warning, "kernel", "Unhandled irq{}", interrupt_num - IRQS_START);
+            }
+        },
         _ => {}
     }
 
@@ -175,8 +203,7 @@ unsafe extern "C" fn handle_interrupt(frame: &mut InterruptFrame) {
         panic!("Unhandled exception {} (error code {})", interrupt_num, frame.error_code);
     } else if interrupt_num < EXT_START {
         super::pic::send_eoi(interrupt_num - IRQS_START);
-        sched::end_interrupt();
-    };
+    }
 
     sched::end_interrupt();
 }
@@ -438,6 +465,20 @@ impl InterruptTable {
 }
 
 static IDT: SharedUnsafeCell<InterruptTable> = SharedUnsafeCell::new(InterruptTable::new());
+
+pub unsafe fn register_irq(n: usize, handler: InterruptHandler) {
+    let mut handlers = IRQ_HANDLERS.lock();
+
+    assert!(handlers[n].is_none());
+    handlers[n] = Some(handler);
+}
+
+pub unsafe fn unregister_irq(n: usize) {
+    let mut handlers = IRQ_HANDLERS.lock();
+
+    assert!(handlers[n].is_some());
+    handlers[n] = None;
+}
 
 pub(super) unsafe fn init_bsp() {
     let idt = IDT.get().as_mut().unwrap();
