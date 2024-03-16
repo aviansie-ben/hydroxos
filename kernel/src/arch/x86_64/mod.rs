@@ -70,6 +70,7 @@ pub(crate) unsafe fn init_phase_1(boot_info: &BootInfo) {
 
 pub(crate) unsafe fn init_phase_2() {
     page::init_kernel_addrspace();
+    dev::ps2::init();
 }
 
 #[naked]

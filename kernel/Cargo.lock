@@ -75,6 +75,7 @@ dependencies = [
  "dyn-dyn",
  "itertools",
  "lock_api",
+ "ps2",
  "spin",
  "uart_16550",
  "x86_64",
@@ -106,6 +107,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e835ff2298f5721608eb1a980ecaee1aef2c132bf95ecc026a11b7bf3c01c02e"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "ps2"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dfef03bb1362e6a23a211efe8c72e2eeb6888f51fb329cdfa07bb470986ea7d0"
+dependencies = [
+ "bitflags 1.3.2",
+ "x86_64",
 ]
 
 [[package]]

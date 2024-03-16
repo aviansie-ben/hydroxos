@@ -16,6 +16,7 @@ use crate::sync::{Future, UninterruptibleSpinlock};
 use crate::util::SharedUnsafeCell;
 
 pub mod hub;
+pub mod kbd;
 
 pub type DeviceRef<T> = Arc<DeviceNode<T>>;
 pub type DeviceWeak<T> = Weak<DeviceNode<T>>;

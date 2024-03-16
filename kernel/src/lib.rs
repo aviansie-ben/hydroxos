@@ -11,6 +11,7 @@
 #![feature(ptr_metadata)]
 #![feature(slice_ptr_len)]
 #![feature(thread_local)]
+#![feature(try_blocks)]
 #![allow(incomplete_features)]
 #![feature(specialization)]
 #![reexport_test_harness_main = "test_harness_main"]
