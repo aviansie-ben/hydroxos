@@ -5,7 +5,9 @@
 
 use core::cell::UnsafeCell;
 
-use crate::arch::interrupt::InterruptFrame;
+use alloc::{boxed::Box, vec, vec::Vec};
+
+use crate::{arch::interrupt::InterruptFrame, sync::uninterruptible::InterruptDisabler};
 
 pub mod task;
 pub mod wait;
@@ -21,6 +23,9 @@ pub unsafe fn init() {
 
 #[thread_local]
 static IN_INTERRUPT: UnsafeCell<bool> = UnsafeCell::new(false);
+
+#[thread_local]
+static SOFT_INTERRUPTS: UnsafeCell<Vec<Box<dyn FnOnce ()>>> = UnsafeCell::new(vec![]);
 
 /// Notifies the scheduler that an asynchronous hardware interrupt handler has begun.
 ///
@@ -43,7 +48,37 @@ pub(crate) unsafe fn begin_interrupt() {
 /// produces undefined behaviour.
 #[allow(unused)]
 pub(crate) unsafe fn end_interrupt() {
+    run_soft_interrupts();
     *IN_INTERRUPT.get() = false;
+}
+
+/// Enqueues a soft interrupt to be run later (either when interrupts would be re-enabled by dropping an InterruptDisabler or at the end
+/// of handling the current interrupt). The soft interrupt is always run with interrupts disabled.
+///
+/// If the call to this function is not within the context of an interrupt and interrupts are currently enabled, then the provided function
+/// is called immediately.
+///
+/// # Panics
+///
+/// A panic will occur when running the soft interrupt if it attempts to perform a blocking operation.
+pub fn enqueue_soft_interrupt<F: FnOnce () + 'static>(f: F) {
+    if !is_handling_interrupt() && x86_64::instructions::interrupts::are_enabled() {
+        let _interrupts_disabled = InterruptDisabler::new();
+        f();
+    } else {
+        // SAFETY: No references to SOFT_INTERRUPTS can ever leak and no user-provided code runs while it is in use
+        unsafe { &mut *SOFT_INTERRUPTS.get() }.push(Box::new(f));
+    }
+}
+
+/// Runs all pending soft interrupts enqueued by [`enqueue_soft_interrupt`].
+pub(crate) fn run_soft_interrupts() {
+    let _interrupts_disabled = InterruptDisabler::new();
+
+    // SAFETY: No references to SOFT_INTERRUPTS can ever leak and no user-provided code runs while it is in use
+    while let Some(f) = unsafe { &mut *SOFT_INTERRUPTS.get() }.pop() {
+        f();
+    }
 }
 
 /// Gets a flag indicating whether an asynchronous hardware interrupt is currently being serviced on this CPU core.
@@ -98,9 +133,13 @@ pub unsafe fn perform_context_switch_interrupt(old_thread_lock: Option<task::Thr
 
 #[cfg(test)]
 mod test {
+    use core::cell::Cell;
     use core::sync::atomic::{AtomicBool, Ordering};
 
+    use alloc::rc::Rc;
+
     use super::task::*;
+    use crate::sync::uninterruptible::InterruptDisabler;
     use crate::test_util::TEST_THREAD_STACK_SIZE;
 
     #[test_case]
@@ -127,5 +166,22 @@ mod test {
         Thread::yield_current();
         assert!(flag.load(Ordering::Relaxed));
         assert!(matches!(*thread.lock().state(), ThreadState::Dead));
+    }
+
+    #[test_case]
+    fn test_soft_interrupt_in_interrupt_disabler() {
+        let flag = Rc::new(Cell::new(false));
+        let flag_clone = Rc::clone(&flag);
+        let interrupt_disabler = InterruptDisabler::new();
+
+        super::enqueue_soft_interrupt(move || {
+            flag_clone.set(true);
+        });
+        assert!(!flag.get());
+        assert_eq!(2, Rc::strong_count(&flag));
+
+        drop(interrupt_disabler);
+        assert!(flag.get());
+        assert_eq!(1, Rc::strong_count(&flag));
     }
 }

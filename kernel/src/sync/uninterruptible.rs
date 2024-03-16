@@ -32,6 +32,7 @@ use core::ptr;
 
 use x86_64::instructions::interrupts;
 
+use crate::sched;
 use crate::util::SharedUnsafeCell;
 
 #[thread_local]
@@ -103,6 +104,9 @@ impl Drop for InterruptDisabler {
         INTERRUPT_DISABLER_STATE.set((n - 1, was_enabled));
 
         if n == 1 && was_enabled {
+            sched::run_soft_interrupts();
+            assert!(INTERRUPT_DISABLER_STATE.get().0 == 0);
+
             interrupts::enable();
         };
     }
