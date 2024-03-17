@@ -275,7 +275,7 @@ mod test {
     use alloc::boxed::Box;
     use core::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
-    use super::super::task::{Process, Thread};
+    use super::super::task::Process;
     use super::*;
     use crate::test_util::TEST_THREAD_STACK_SIZE;
 

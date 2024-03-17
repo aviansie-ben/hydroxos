@@ -1,7 +1,6 @@
 use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
-use core::iter::FromIterator;
 
 use dyn_dyn::dyn_dyn_impl;
 

@@ -1,5 +1,4 @@
 use core::alloc::{GlobalAlloc, Layout};
-use core::convert::TryFrom;
 use core::sync::atomic::{AtomicPtr, Ordering};
 use core::{cmp, ptr};
 
