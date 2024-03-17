@@ -71,6 +71,8 @@ pub fn alloc(size: usize, align: usize) -> *mut u8 {
 }
 
 pub unsafe fn free(ptr: *mut u8, size: usize) {
+    ptr::write_bytes(ptr, 0xEA, size as usize);
+
     let size = get_full_size(size);
     let mark = EARLY_ALLOC_MARK.load(Ordering::Relaxed);
 
@@ -112,6 +114,8 @@ unsafe fn realloc_grow(ptr: *mut u8, old_size: usize, new_size: usize) -> *mut u
 }
 
 unsafe fn realloc_shrink(ptr: *mut u8, old_size: usize, new_size: usize) -> *mut u8 {
+    ptr::write_bytes(ptr.add(new_size), 0xEA, old_size - new_size);
+
     let old_size = get_full_size(old_size);
     let new_size = get_full_size(new_size);
     let mark = EARLY_ALLOC_MARK.load(Ordering::Relaxed);
