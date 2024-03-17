@@ -10,9 +10,13 @@ use core::panic::PanicInfo;
 
 use bootloader::{entry_point, BootInfo};
 
+#[cfg(not(test))]
 entry_point!(kernel_main);
 
-#[cfg(not(test))]
+#[cfg(test)]
+entry_point!(test_main);
+
+#[allow(dead_code)]
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     use hydroxos_kernel::log;
 
@@ -48,7 +52,7 @@ fn echo_keyboard() {
 }
 
 #[cfg(test)]
-fn kernel_main(_: &'static BootInfo) -> ! {
+fn test_main(_: &'static BootInfo) -> ! {
     // We don't have any tests on the binary right now
     hydroxos_kernel::test_util::exit(0);
 }
