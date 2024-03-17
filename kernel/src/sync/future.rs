@@ -3,7 +3,6 @@
 use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
-use core::any::Any;
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::mem;
@@ -56,6 +55,7 @@ impl<'a> FutureWaitGenericLock<'a> {
     }
 }
 
+#[repr(C)]
 pub struct FutureWait<T> {
     generic: FutureWaitGeneric,
     val: UnsafeCell<MaybeUninit<T>>
@@ -81,10 +81,22 @@ impl<T> FutureWait<T> {
         drop(Box::from_raw(ptr as *mut FutureWait<T>));
     }
 
-    unsafe fn take_val(&self, lock: &mut FutureWaitGenericLock) -> T {
+    unsafe fn dec_val_ref(&self, lock: &mut FutureWaitGenericLock) {
         assert!(self.generic.state.is_guarded_by(&lock.state));
         assert!(lock.state.val_refs > 0);
 
+        lock.state.val_refs -= 1;
+        if lock.state.resolved && lock.state.val_refs == 0 {
+            ptr::read((*self.val.get()).as_ptr());
+        }
+    }
+
+    unsafe fn take_val(&self, lock: &mut FutureWaitGenericLock) -> T {
+        assert!(self.generic.state.is_guarded_by(&lock.state));
+        assert!(lock.state.val_refs > 0);
+        assert!(lock.state.resolved);
+
+        lock.state.val_refs -= 1;
         if lock.state.val_refs == 0 {
             ptr::read((*self.val.get()).as_ptr())
         } else {
@@ -93,21 +105,126 @@ impl<T> FutureWait<T> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct FutureWaitFreer {
-    ptr: *const (),
-    free_fn: fn(*const ()),
-    _data: PhantomData<dyn Any>
+#[derive(Debug)]
+enum FutureInternalUnresolved<T> {
+    WithVal(*const FutureWait<T>),
+    WithoutVal(*const FutureWaitGeneric, fn(*const FutureWaitGeneric))
 }
 
-unsafe impl Send for FutureWaitFreer {}
-unsafe impl Sync for FutureWaitFreer {}
+unsafe impl<T: Send> Send for FutureInternalUnresolved<T> {}
+unsafe impl<T: Send> Sync for FutureInternalUnresolved<T> {}
+
+impl<T> FutureInternalUnresolved<T> {
+    unsafe fn dec_wait_ref(&mut self, wait: FutureWaitGenericLock) {
+        match *self {
+            FutureInternalUnresolved::WithVal(ptr) => {
+                Future::dec_wait_ref(ptr, wait);
+            },
+            FutureInternalUnresolved::WithoutVal(ptr, free) => {
+                Future::dec_wait_ref_generic(ptr, free, wait);
+            }
+        }
+    }
+
+    unsafe fn try_resolve(mut self) -> Result<T, (FutureInternalUnresolved<T>, FutureWaitGenericLock<'static>)> {
+        let mut lock = match self {
+            FutureInternalUnresolved::WithVal(ptr) => unsafe { (*ptr).generic.lock() },
+            FutureInternalUnresolved::WithoutVal(ptr, _) => unsafe { (*ptr).lock() }
+        };
+
+        if lock.state.resolved {
+            let val = match self {
+                FutureInternalUnresolved::WithVal(ptr) => unsafe { (*ptr).take_val(&mut lock) },
+                FutureInternalUnresolved::WithoutVal(_, _) => crate::util::unit_or_panic()
+            };
+
+            self.dec_wait_ref(lock);
+            mem::forget(self);
+            Ok(val)
+        } else {
+            Err((self, lock))
+        }
+    }
+}
+
+impl<T> Drop for FutureInternalUnresolved<T> {
+    fn drop(&mut self) {
+        let mut lock = match *self {
+            FutureInternalUnresolved::WithVal(ptr) => unsafe { (*ptr).generic.lock() },
+            FutureInternalUnresolved::WithoutVal(ptr, _) => unsafe { (*ptr).lock() }
+        };
+
+        if let FutureInternalUnresolved::WithVal(ptr) = *self {
+            unsafe {
+                (*ptr).dec_val_ref(&mut lock);
+            }
+        }
+
+        unsafe {
+            self.dec_wait_ref(lock);
+        }
+    }
+}
 
 #[derive(Debug)]
 enum FutureInternal<T> {
-    Waiting(*const FutureWait<T>, PhantomData<FutureWait<T>>),
-    WaitingNoVal(*const FutureWaitGeneric, FutureWaitFreer),
-    Done(T)
+    Unresolved(FutureInternalUnresolved<T>),
+    Done(T),
+    Invalid
+}
+
+impl<T> FutureInternal<T> {
+    fn update_state(&mut self) -> Option<FutureWaitGenericLock> {
+        match mem::replace(self, FutureInternal::Invalid) {
+            FutureInternal::Unresolved(unresolved) => match unsafe { unresolved.try_resolve() } {
+                Ok(val) => {
+                    *self = FutureInternal::Done(val);
+                    None
+                },
+                Err((unresolved, lock)) => {
+                    *self = FutureInternal::Unresolved(unresolved);
+                    Some(lock)
+                }
+            },
+            FutureInternal::Done(val) => {
+                *self = FutureInternal::Done(val);
+                None
+            },
+            FutureInternal::Invalid => {
+                panic!("future is in invalid state");
+            }
+        }
+    }
+}
+
+impl<T: Send + Sync + Clone> Clone for FutureInternal<T> {
+    fn clone(&self) -> Self {
+        match *self {
+            FutureInternal::Unresolved(FutureInternalUnresolved::WithVal(ptr)) => unsafe {
+                let mut lock = (*ptr).generic.lock();
+
+                if lock.state.resolved {
+                    FutureInternal::Done(crate::util::clone_or_panic((*(*ptr).val.get()).assume_init_ref()))
+                } else {
+                    lock.state.wait_refs += 1;
+                    lock.state.val_refs += 1;
+                    FutureInternal::Unresolved(FutureInternalUnresolved::WithVal(ptr))
+                }
+            },
+            FutureInternal::Unresolved(FutureInternalUnresolved::WithoutVal(ptr, free)) => unsafe {
+                let mut lock = (*ptr).lock();
+
+                if lock.state.resolved {
+                    FutureInternal::Done(crate::util::unit_or_panic())
+                } else {
+                    lock.state.wait_refs += 1;
+                    FutureInternal::Unresolved(FutureInternalUnresolved::WithoutVal(ptr, free))
+                }
+            },
+            FutureInternal::Done(ref val) => FutureInternal::Done(val.clone()),
+            FutureInternal::Invalid => FutureInternal::Invalid
+        }
+    }
 }
 
 /// Represents a value that will be available when an asynchronous operation completes.
@@ -135,10 +252,10 @@ impl<T> Future<T> {
     pub fn new() -> (Future<T>, FutureWriter<T>) {
         let wait = FutureWait::new(2, 1);
 
-        (Future(FutureInternal::Waiting(wait, PhantomData)), FutureWriter {
-            wait,
-            _data: PhantomData
-        })
+        (
+            Future(FutureInternal::Unresolved(FutureInternalUnresolved::WithVal(wait))),
+            FutureWriter { wait, _data: PhantomData }
+        )
     }
 
     /// Creates a new [`Future`] that is immediately resolved with the provided value. Calling methods on the returned future will never
@@ -148,42 +265,15 @@ impl<T> Future<T> {
     }
 
     fn do_action<U>(&mut self, f: impl FnOnce(Result<&mut T, FutureWaitGenericLock>) -> U) -> U {
-        let result = match self.0 {
-            FutureInternal::Waiting(ptr, _) => unsafe {
-                let mut wait = (*ptr).generic.lock();
-
-                if wait.state.resolved {
-                    let val = (*ptr).take_val(&mut wait);
-                    Future::dec_wait_ref(ptr, wait);
-
-                    self.0 = FutureInternal::Done(val);
-                    Ok(f)
-                } else {
-                    Err(f(Err(wait)))
-                }
-            },
-            FutureInternal::WaitingNoVal(ptr, ref freer) => unsafe {
-                let wait = (*ptr).lock();
-
-                if wait.state.resolved {
-                    Future::dec_wait_ref_generic(freer, wait);
-
-                    self.0 = FutureInternal::Done(crate::util::unit_or_panic());
-                    Ok(f)
-                } else {
-                    Err(f(Err(wait)))
-                }
-            },
-            FutureInternal::Done(_) => Ok(f)
-        };
-
-        match result {
-            Ok(f) => match self.0 {
-                FutureInternal::Waiting(_, _) => unreachable!(),
-                FutureInternal::WaitingNoVal(_, _) => unreachable!(),
-                FutureInternal::Done(ref mut val) => f(Ok(val))
-            },
-            Err(wait_result) => wait_result
+        match self.0.update_state() {
+            Some(lock) => f(Err(lock)),
+            s @ None => {
+                drop(s);
+                f(Ok(match self.0 {
+                    FutureInternal::Done(ref mut val) => val,
+                    _ => unreachable!()
+                }))
+            }
         }
     }
 
@@ -223,9 +313,9 @@ impl<T> Future<T> {
     /// a future to avoid stale results.
     pub fn is_ready(&self) -> bool {
         match self.0 {
-            FutureInternal::Waiting(_, _) => false,
-            FutureInternal::WaitingNoVal(_, _) => false,
-            FutureInternal::Done(_) => true
+            FutureInternal::Unresolved(_) => false,
+            FutureInternal::Done(_) => true,
+            FutureInternal::Invalid => unreachable!()
         }
     }
 
@@ -240,13 +330,12 @@ impl<T> Future<T> {
     pub fn unwrap_blocking(mut self) -> T {
         self.block_until_ready();
 
-        match mem::replace(&mut self.0, FutureInternal::Waiting(ptr::null(), PhantomData)) {
-            FutureInternal::Waiting(_, _) => unreachable!(),
-            FutureInternal::WaitingNoVal(_, _) => unreachable!(),
+        match mem::replace(&mut self.0, FutureInternal::Invalid) {
             FutureInternal::Done(val) => {
                 mem::forget(self);
                 val
-            }
+            },
+            _ => unreachable!()
         }
     }
 
@@ -258,18 +347,11 @@ impl<T> Future<T> {
     /// [`Future::update_readiness`] and so may return stale results. In general. this method should only be called on a future which has
     /// just been received as part of a non-blocking fast path. If the readiness of this future has potentially not been updated in a while,
     /// [`Future::try_unwrap`] should be used instead.
-    pub fn try_unwrap_without_update(mut self) -> Result<T, Future<T>> {
+    pub fn try_unwrap_without_update(self) -> Result<T, Future<T>> {
         match self.0 {
-            FutureInternal::Waiting(_, _) => Err(self),
-            FutureInternal::WaitingNoVal(_, _) => Err(self),
-            FutureInternal::Done(_) => match mem::replace(&mut self.0, FutureInternal::Waiting(ptr::null(), PhantomData)) {
-                FutureInternal::Waiting(_, _) => unreachable!(),
-                FutureInternal::WaitingNoVal(_, _) => unreachable!(),
-                FutureInternal::Done(val) => {
-                    mem::forget(self);
-                    Ok(val)
-                }
-            }
+            FutureInternal::Unresolved(unresolved) => Err(Future(FutureInternal::Unresolved(unresolved))),
+            FutureInternal::Done(val) => Ok(val),
+            FutureInternal::Invalid => unreachable!()
         }
     }
 
@@ -289,41 +371,60 @@ impl<T> Future<T> {
     /// # Panics
     ///
     /// A panic will occur when calling the provided callback if it attempts to perform a blocking operation.
-    pub fn when_resolved(&mut self, f: impl FnOnce(&T) + Send + 'static) {
-        self.do_action(|state| match state {
-            Ok(val) => {
-                Thread::run_non_blocking(|| {
-                    f(val);
-                });
+    pub fn when_resolved(self, f: impl FnOnce(T) + Send + 'static) {
+        match self.0 {
+            FutureInternal::Unresolved(unresolved) => {
+                let has_val = matches!(unresolved, FutureInternalUnresolved::WithVal(_));
+                match unsafe { unresolved.try_resolve() } {
+                    Ok(val) => f(val),
+                    Err((unresolved, mut lock)) => {
+                        lock.state.actions.push(Box::new(move |ptr, lock| {
+                            let val = if has_val {
+                                unsafe { (*(ptr as *const FutureWait<T>)).take_val(lock) }
+                            } else {
+                                crate::util::unit_or_panic()
+                            };
+
+                            f(val);
+                        }));
+
+                        lock.state.wait_refs -= 1;
+                        mem::forget(unresolved);
+                    }
+                }
             },
-            Err(mut wait) => {
-                wait.state.actions.push(Box::new(|ptr, _| unsafe { f(&*(ptr as *const T)) }));
-            }
-        })
+            FutureInternal::Done(val) => {
+                f(val);
+            },
+            FutureInternal::Invalid => unreachable!()
+        }
     }
 
     /// Creates a future that resolves to `()` when this future is resolved. This allows for multiple futures to be created that will
     /// resolve along with another future, even if the value in that future does not implement [`Clone`].
     pub fn without_val(&self) -> Future<()> {
         match self.0 {
-            FutureInternal::Waiting(ptr, _) => unsafe {
+            FutureInternal::Unresolved(FutureInternalUnresolved::WithVal(ptr)) => unsafe {
                 let mut lock = (*ptr).generic.lock();
 
                 if lock.state.resolved {
                     Future::done(())
                 } else {
                     lock.state.wait_refs += 1;
-                    Future(FutureInternal::WaitingNoVal(&(*ptr).generic as *const _, FutureWaitFreer {
-                        ptr: ptr as *const (),
-                        free_fn: |ptr| {
-                            FutureWait::destroy(ptr as *const FutureWait<T>);
-                        },
-                        _data: PhantomData
-                    }))
+                    let generic_ptr = &(*ptr).generic as *const _;
+                    assert_eq!(generic_ptr as *const (), ptr as *const ());
+                    Future(FutureInternal::Unresolved(FutureInternalUnresolved::WithoutVal(
+                        generic_ptr,
+                        |ptr| FutureWait::destroy(ptr as *const FutureWait<T>)
+                    )))
                 }
             },
-            FutureInternal::WaitingNoVal(ptr, ref freer) => Future(FutureInternal::WaitingNoVal(ptr, freer.clone())),
-            FutureInternal::Done(_) => Future::done(())
+            FutureInternal::Unresolved(FutureInternalUnresolved::WithoutVal(ptr, free)) => unsafe {
+                (*ptr).lock().state.wait_refs += 1;
+                Future(FutureInternal::Unresolved(FutureInternalUnresolved::WithoutVal(ptr, free)))
+            },
+            FutureInternal::Done(_) => Future::done(()),
+            FutureInternal::Invalid => unreachable!()
         }
     }
 
@@ -338,77 +439,29 @@ impl<T> Future<T> {
     }
 }
 
-impl<T: 'static> Future<T> {
+impl<T: Send + 'static> Future<T> {
     /// Runs the provided callback in a soft interrupt after this [`Future`] is resolved.
     ///
     /// # Panics
     ///
     /// A panic will occur when calling the provided callback if it attempts to perform a blocking operation.
-    pub fn when_resolved_soft(mut self, f: impl FnOnce(T) + Send + 'static) {
-        loop {
-            self.update_readiness();
-
-            let state = mem::replace(&mut self.0, FutureInternal::Waiting(ptr::null(), PhantomData));
-            match state {
-                FutureInternal::Done(val) => {
-                    sched::enqueue_soft_interrupt(move || f(val));
-                    break;
-                },
-                FutureInternal::Waiting(ptr, _) => {
-                    let mut wait = unsafe { &*ptr }.generic.lock();
-                    let ptr = SendPtr::new(ptr);
-
-                    if !wait.state.resolved {
-                        wait.state.actions.push(Box::new(move |_, _| {
-                            sched::enqueue_soft_interrupt(move || {
-                                let ptr = ptr.unwrap();
-                                let val = unsafe {
-                                    let mut wait = (*ptr).generic.lock();
-                                    let val = (*ptr).take_val(&mut wait);
-                                    Future::dec_wait_ref(ptr, wait);
-                                    val
-                                };
-
-                                f(val);
-                            })
-                        }));
-                        break;
-                    }
-                },
-                FutureInternal::WaitingNoVal(ptr, freer) => {
-                    let mut wait = unsafe { &*ptr }.lock();
-                    let ptr = SendPtr::new(ptr);
-
-                    if !wait.state.resolved {
-                        wait.state.actions.push(Box::new(move |_, _| {
-                            sched::enqueue_soft_interrupt(move || {
-                                let ptr = ptr.unwrap();
-                                unsafe {
-                                    Future::dec_wait_ref_generic(&freer, (*ptr).lock());
-                                }
-                                f(crate::util::unit_or_panic());
-                            })
-                        }));
-                        break;
-                    }
-                }
-            }
-
-            self.0 = state;
-        }
-
-        mem::forget(self);
+    pub fn when_resolved_soft(self, f: impl FnOnce(T) + Send + 'static) {
+        self.when_resolved(move |val| {
+            sched::enqueue_soft_interrupt(move || {
+                f(val);
+            });
+        });
     }
 }
 
 impl Future<()> {
-    unsafe fn dec_wait_ref_generic(freer: &FutureWaitFreer, mut wait: FutureWaitGenericLock) {
+    unsafe fn dec_wait_ref_generic(ptr: *const FutureWaitGeneric, free: fn(*const FutureWaitGeneric), mut wait: FutureWaitGenericLock) {
         wait.state.wait_refs -= 1;
         if wait.state.wait_refs != 0 {
             wait.wait.wake_all();
         } else {
             drop(wait);
-            (freer.free_fn)(freer.ptr);
+            (free)(ptr);
         }
     }
 
@@ -422,7 +475,7 @@ impl Future<()> {
         }
 
         let mut num_futures = 0;
-        for mut f in fs {
+        for f in fs {
             num_futures += 1;
 
             if num_futures == usize::MAX {
@@ -463,7 +516,7 @@ impl Future<()> {
         let wait = SendPtr::new(writer.into_raw());
 
         let mut was_empty = true;
-        for (i, mut f) in fs.into_iter().enumerate() {
+        for (i, f) in fs.into_iter().enumerate() {
             was_empty = false;
 
             unsafe {
@@ -494,49 +547,11 @@ impl Future<()> {
     }
 }
 
-impl<T: Clone> Clone for Future<T> {
-    fn clone(&self) -> Future<T> {
-        match self.0 {
-            FutureInternal::Waiting(ptr, _) => unsafe {
-                let mut lock = (*ptr).generic.lock();
-
-                lock.state.wait_refs += 1;
-                lock.state.val_refs += 1;
-
-                Future(FutureInternal::Waiting(ptr, PhantomData))
-            },
-            FutureInternal::WaitingNoVal(ptr, ref freer) => unsafe {
-                let mut lock = (*ptr).lock();
-
-                lock.state.wait_refs += 1;
-
-                Future(FutureInternal::WaitingNoVal(ptr, freer.clone()))
-            },
-            FutureInternal::Done(ref val) => Future(FutureInternal::Done(val.clone()))
-        }
+impl<T: Send + Sync + Clone> Clone for Future<T> {
+    fn clone(&self) -> Self {
+        Future(self.0.clone())
     }
 }
-
-impl<T> Drop for Future<T> {
-    fn drop(&mut self) {
-        match self.0 {
-            FutureInternal::Waiting(ptr, _) if !ptr.is_null() => unsafe {
-                let mut wait = (*ptr).generic.lock();
-
-                wait.state.val_refs -= 1;
-                if wait.state.val_refs == 0 && wait.state.resolved {
-                    ptr::read((*(*ptr).val.get()).as_ptr());
-                };
-
-                Future::dec_wait_ref(ptr, wait);
-            },
-            _ => {}
-        };
-    }
-}
-
-unsafe impl<T: Send> Send for Future<T> {}
-unsafe impl<T: Send> Sync for Future<T> {}
 
 /// Represents ownership of the "resolution side" of a future. Holding a value of this type allows the caller to resolve its associated
 /// future.
@@ -553,20 +568,15 @@ pub struct FutureWriter<T> {
 
 impl<T> FutureWriter<T> {
     unsafe fn finish_internal(ptr: *const FutureWait<T>, mut wait: FutureWaitGenericLock) {
-        let val_ptr = (*ptr).val.get();
         wait.state.resolved = true;
 
         let actions = mem::take(&mut wait.state.actions);
         if !actions.is_empty() {
             Thread::run_non_blocking(|| {
                 for a in actions.into_iter() {
-                    a(val_ptr as *const (), &mut wait);
+                    a(ptr as *const (), &mut wait);
                 }
             });
-        }
-
-        if wait.state.val_refs == 0 {
-            ptr::read((*val_ptr).as_ptr());
         }
 
         Future::dec_wait_ref(ptr, wait);
@@ -593,7 +603,7 @@ impl<T> FutureWriter<T> {
         guard.state.wait_refs += 1;
         guard.state.val_refs += 1;
 
-        Future(FutureInternal::Waiting(self.wait, PhantomData))
+        Future(FutureInternal::Unresolved(FutureInternalUnresolved::WithVal(self.wait)))
     }
 
     /// Resolves the future associated with this writer with the provided value.
@@ -601,7 +611,9 @@ impl<T> FutureWriter<T> {
         unsafe {
             let wait = (*self.wait).generic.lock();
 
-            *(*self.wait).val.get() = MaybeUninit::new(val);
+            if wait.state.val_refs != 0 {
+                *(*self.wait).val.get() = MaybeUninit::new(val);
+            }
             FutureWriter::finish_internal(self.wait, wait);
             mem::forget(self);
         };
@@ -706,7 +718,7 @@ mod test {
 
     #[test_case]
     fn test_when_resolved() {
-        let (mut future, writer) = Future::new();
+        let (future, writer) = Future::new();
 
         ACTION_RUN_FLAG.store(false, Ordering::Relaxed);
         future.when_resolved(|_| {
@@ -749,7 +761,7 @@ mod test {
 
     #[test_case]
     fn test_without_val_when_resolved() {
-        let (mut future, writer) = {
+        let (future, writer) = {
             let (future, writer) = Future::new();
 
             (future.without_val(), writer)
