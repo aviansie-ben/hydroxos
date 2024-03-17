@@ -1,5 +1,9 @@
 use core::mem;
 
+use super::dev::kbd::{KeyboardLockState, ModifierState};
+
+mod qwerty_us;
+
 #[derive(Debug)]
 pub struct InvalidKeycodeError;
 
@@ -154,5 +158,75 @@ impl TryFrom<usize> for Keycode {
         } else {
             Keycode::DeviceSpecific(u16::try_from(value - 0x10000).map_err(|_| InvalidKeycodeError)?)
         })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum KeycodeMapEntry {
+    Simple(Option<char>),
+    Shift(Option<char>, Option<char>),
+    ShiftCaps(Option<char>, Option<char>),
+    NumLock(Option<char>, Option<char>)
+}
+
+#[derive(Debug)]
+pub struct KeycodeMap {
+    name: &'static str,
+    common: [KeycodeMapEntry; CommonKeycode::NUM_KEYCODES]
+}
+
+impl KeycodeMap {
+    pub fn fallback() -> &'static Self {
+        &qwerty_us::KEYMAP
+    }
+
+    pub const fn new(name: &'static str) -> Self {
+        Self {
+            name,
+            common: [KeycodeMapEntry::Simple(None); CommonKeycode::NUM_KEYCODES]
+        }
+    }
+
+    pub const fn set_common(&mut self, k: CommonKeycode, e: KeycodeMapEntry) {
+        self.common[k as usize] = e;
+    }
+
+    pub fn name(&self) -> &str {
+        self.name
+    }
+
+    pub fn get(&self, k: Keycode, lock_state: KeyboardLockState, mod_state: ModifierState) -> Option<char> {
+        if mod_state.ctrl() || mod_state.alt() || mod_state.super_key() {
+            return None;
+        }
+
+        match k {
+            Keycode::Common(k) => match self.common[k as usize] {
+                KeycodeMapEntry::Simple(ch) => ch,
+                KeycodeMapEntry::Shift(ch_false, ch_true) => if mod_state.shift() {
+                    ch_true
+                } else {
+                    ch_false
+                },
+                KeycodeMapEntry::ShiftCaps(ch_false, ch_true) => if mod_state.shift() != lock_state.caps_lock {
+                    ch_true
+                } else {
+                    ch_false
+                },
+                KeycodeMapEntry::NumLock(ch_false, ch_true) => if lock_state.num_lock {
+                    ch_true
+                } else {
+                    ch_false
+                }
+            },
+            Keycode::DeviceSpecific(_) => None
+        }
+    }
+}
+
+pub fn get_keymap(name: &str) -> Option<&'static KeycodeMap> {
+    match name {
+        "qwerty-us" => Some(&qwerty_us::KEYMAP),
+        _ => None
     }
 }

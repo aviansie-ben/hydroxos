@@ -6,7 +6,7 @@ use crate::arch::{interrupt, pic};
 use crate::io::dev::kbd::{KeyPress, Keyboard, KeyboardError, KeyboardHeldKeys, KeyboardLockState, ModifierState};
 use crate::io::dev::{device_root, DeviceNode};
 use crate::io::dev::{hub::DeviceHub, Device, DeviceRef};
-use crate::io::keymap::{CommonKeycode, Keycode};
+use crate::io::keymap::{CommonKeycode, Keycode, KeycodeMap};
 use crate::log;
 use crate::sync::future::FutureWriter;
 use crate::sync::uninterruptible::{UninterruptibleSpinlockGuard, UninterruptibleSpinlockReadGuard};
@@ -213,7 +213,8 @@ struct Ps2KeyboardInternals {
     input_future: Option<FutureWriter<Result<KeyPress, KeyboardError>>>,
     scancode_buf: [u8; 5],
     scancode_buf_pos: usize,
-    scancode_map: &'static ScancodeMap
+    scancode_map: &'static ScancodeMap,
+    keycode_map: &'static KeycodeMap
 }
 
 #[derive(Debug)]
@@ -245,7 +246,11 @@ impl Ps2Keyboard {
                 code: key,
                 lock_state: guard.keyboard.lock_state,
                 mods: guard.keyboard.mod_state,
-                char: None
+                char: guard.keyboard.keycode_map.get(
+                    key,
+                    guard.keyboard.lock_state,
+                    guard.keyboard.mod_state
+                )
             };
 
             if let Some(input_future) = guard.keyboard.input_future.take() {
@@ -308,6 +313,14 @@ impl Keyboard for Ps2Keyboard {
         Ok(UninterruptibleSpinlockReadGuard::map(self.lock().into_keyboard(), |k| {
             &k.held_keys as &dyn KeyboardHeldKeys
         }))
+    }
+
+    fn keymap(&self) -> &'static KeycodeMap {
+        self.lock().keyboard().keycode_map
+    }
+
+    fn set_keymap(&self, map: &'static KeycodeMap) {
+        self.lock().keyboard().keycode_map = map;
     }
 
     fn next_key(&self) -> Future<Result<KeyPress, KeyboardError>> {
@@ -511,7 +524,8 @@ pub unsafe fn init() -> Option<DeviceRef<Ps2Controller>> {
                         input_future: None,
                         scancode_buf: [0; 5],
                         scancode_buf_pos: 0,
-                        scancode_map: &scancode_2_map::MAP
+                        scancode_map: &scancode_2_map::MAP,
+                        keycode_map: KeycodeMap::fallback()
                     })
                 })
                 .connect(DeviceRef::<Ps2Controller>::downgrade(&controller))

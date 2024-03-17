@@ -1,6 +1,6 @@
 use super::Device;
 use crate::{
-    io::keymap::{CommonKeycode, Keycode},
+    io::keymap::{CommonKeycode, Keycode, KeycodeMap},
     sync::{uninterruptible::UninterruptibleSpinlockReadGuard, Future}
 };
 
@@ -63,6 +63,22 @@ impl ModifierState {
             left_super_key: false,
             right_super_key: false
         }
+    }
+
+    pub fn ctrl(&self) -> bool {
+        self.left_ctrl || self.right_ctrl
+    }
+
+    pub fn alt(&self) -> bool {
+        self.left_alt || self.right_alt
+    }
+
+    pub fn shift(&self) -> bool {
+        self.left_shift || self.right_shift
+    }
+
+    pub fn super_key(&self) -> bool {
+        self.left_super_key || self.right_super_key
     }
 
     pub fn handle_key_state_changed(&mut self, key: Keycode, pressed: bool) -> bool {
@@ -140,6 +156,9 @@ pub trait Keyboard: Device {
 
     fn mod_state(&self) -> Result<ModifierState, KeyboardError>;
     fn held_keys(&self) -> Result<UninterruptibleSpinlockReadGuard<dyn KeyboardHeldKeys>, KeyboardError>;
+
+    fn keymap(&self) -> &'static KeycodeMap;
+    fn set_keymap(&self, map: &'static KeycodeMap);
 
     fn next_key(&self) -> Future<Result<KeyPress, KeyboardError>>;
 }
