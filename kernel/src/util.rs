@@ -261,19 +261,19 @@ impl<T, const N: usize> ArrayDeque<T, N> {
     }
 }
 
-impl<'a, T, const N: usize> Drop for ArrayDeque<T, N> {
+impl<T, const N: usize> Drop for ArrayDeque<T, N> {
     fn drop(&mut self) {
         self.drain();
     }
 }
 
-impl<'a, T: fmt::Debug, const N: usize> fmt::Debug for ArrayDeque<T, N> {
+impl<T: fmt::Debug, const N: usize> fmt::Debug for ArrayDeque<T, N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list().entries(self.iter()).finish()
     }
 }
 
-impl<'a, T: Clone, const N: usize> Clone for ArrayDeque<T, N> {
+impl<T: Clone, const N: usize> Clone for ArrayDeque<T, N> {
     fn clone(&self) -> Self {
         let mut new = ArrayDeque::new();
 
@@ -351,6 +351,6 @@ impl<'a, T, const N: usize> DoubleEndedIterator for ArrayDequeDrain<'a, T, N> {
 
 impl<'a, T, const N: usize> Drop for ArrayDequeDrain<'a, T, N> {
     fn drop(&mut self) {
-        while let Some(_) = self.next() {}
+        for _ in self {}
     }
 }

@@ -85,7 +85,7 @@ impl MutexLock {
 
         loop {
             match state {
-                MutexLockState::Unlocked => match self.try_acquire_fast(&thread).map_err(MutexLockState::from_usize) {
+                MutexLockState::Unlocked => match self.try_acquire_fast(thread).map_err(MutexLockState::from_usize) {
                     Ok(_) => {
                         return;
                     },

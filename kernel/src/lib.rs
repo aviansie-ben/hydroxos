@@ -17,8 +17,10 @@
 #![reexport_test_harness_main = "test_harness_main"]
 #![test_runner(crate::test_util::run_tests)]
 #![allow(clippy::match_like_matches_macro)]
+#![allow(clippy::missing_safety_doc)]
 #![allow(clippy::new_without_default)]
 #![allow(clippy::result_unit_err)]
+#![allow(clippy::unnecessary_cast)] // Incorrectly catches cases where pointee type is unknown
 
 extern crate alloc;
 

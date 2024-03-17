@@ -96,7 +96,7 @@ impl<T: ?Sized> DeviceNode<T> {
     }
 
     pub fn name(&self) -> &str {
-        &*self.name
+        &self.name
     }
 
     pub fn full_name(&self) -> impl fmt::Display + '_ {
@@ -212,15 +212,15 @@ pub fn log_device_tree() {
         let children: Option<Result<Vec<_>, DeviceHubLockedError>> = if let Ok(hub) = dyn_dyn_cast!(Device => DeviceHub, dev.dev()) {
             let mut children = vec![];
 
-            Some(
-                match hub.try_for_children(&mut |c| {
-                    children.push(c.clone());
-                    true
-                }) {
-                    Ok(_) => Ok(children),
-                    Err(e) => Err(e)
-                }
-            )
+            let result = hub.try_for_children(&mut |c| {
+                children.push(c.clone());
+                true
+            });
+
+            Some(match result {
+                Ok(_) => Ok(children),
+                Err(e) => Err(e)
+            })
         } else {
             None
         };

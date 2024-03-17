@@ -160,7 +160,7 @@ impl ThreadWaitList {
             let mut internal = self.internal.lock();
 
             assert!(matches!(*thread.state(), ThreadState::Running));
-            *thread.state_mut() = ThreadState::Waiting(&*self);
+            *thread.state_mut() = ThreadState::Waiting(self);
 
             // SAFETY: The only way for the caller to release the thread lock at this point would be to either call ThreadWait::suspend or
             //         drop the returned ThreadWait, which will unconditionally panic. If the returned ThreadWait is leaked, then the thread

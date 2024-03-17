@@ -57,6 +57,7 @@ unsafe impl PageTableFrameMapping for PhysPageTableFrameMapping {
     }
 }
 
+#[allow(dead_code)]
 struct PhysFrameDeallocator<'a, T: FrameAllocator>(&'a mut T);
 
 impl<'a, T: FrameAllocator> FrameDeallocator<Size4KiB> for PhysFrameDeallocator<'a, T> {

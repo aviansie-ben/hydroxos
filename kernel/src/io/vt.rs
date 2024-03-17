@@ -294,7 +294,7 @@ impl VirtualTerminalManager {
 
             if display_id < vtmgr.displays.len() {
                 vtmgr.displays[display_id].1 = terminal_id;
-                vtmgr.displays[display_id].0.dev().redraw(&*vt);
+                vtmgr.displays[display_id].0.dev().redraw(&vt);
                 true
             } else {
                 false

@@ -30,7 +30,7 @@ struct Scancode {
 
 impl Scancode {
     pub fn try_parse(buf: &[u8]) -> Option<(Scancode, usize)> {
-        match buf.get(0).copied() {
+        match buf.first().copied() {
             Some(0xE0) => match buf.get(1).copied() {
                 Some(0xF0) if buf.len() >= 3 => Some((
                     Scancode {
@@ -149,7 +149,7 @@ struct Ps2KeyboardGuard<'a> {
 
 impl<'a> Ps2KeyboardGuard<'a> {
     pub fn controller(&mut self) -> &mut Ps2ControllerInternals {
-        &mut *self.controller
+        &mut self.controller
     }
 
     pub fn keyboard(&mut self) -> &mut Ps2KeyboardInternals {
@@ -324,14 +324,16 @@ impl Keyboard for Ps2Keyboard {
     }
 }
 
+#[allow(dead_code)]
 struct Ps2MouseGuard<'a> {
     controller: UninterruptibleSpinlockGuard<'a, Ps2ControllerInternals>,
     mouse: &'a mut Ps2MouseInternals
 }
 
+#[allow(dead_code)]
 impl<'a> Ps2MouseGuard<'a> {
     pub fn controller(&mut self) -> &mut Ps2ControllerInternals {
-        &mut *self.controller
+        &mut self.controller
     }
 
     pub fn mouse(&mut self) -> &mut Ps2MouseInternals {
@@ -343,11 +345,13 @@ impl<'a> Ps2MouseGuard<'a> {
 struct Ps2MouseInternals {}
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct Ps2Mouse {
     internal: SharedUnsafeCell<Ps2MouseInternals>,
     controller: DeviceRef<Ps2Controller>
 }
 
+#[allow(dead_code)]
 impl Ps2Mouse {
     fn lock(&self) -> Ps2MouseGuard {
         self.lock_from_controller(self.controller.dev().internal.lock())
