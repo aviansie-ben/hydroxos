@@ -430,9 +430,7 @@ impl<T> Future<T> {
 
     unsafe fn dec_wait_ref(ptr: *const FutureWait<T>, mut wait: FutureWaitGenericLock) {
         wait.state.wait_refs -= 1;
-        if wait.state.wait_refs != 0 {
-            wait.wait.wake_all();
-        } else {
+        if wait.state.wait_refs == 0 {
             drop(wait);
             FutureWait::destroy(ptr);
         }
@@ -457,9 +455,7 @@ impl<T: Send + 'static> Future<T> {
 impl Future<()> {
     unsafe fn dec_wait_ref_generic(ptr: *const FutureWaitGeneric, free: fn(*const FutureWaitGeneric), mut wait: FutureWaitGenericLock) {
         wait.state.wait_refs -= 1;
-        if wait.state.wait_refs != 0 {
-            wait.wait.wake_all();
-        } else {
+        if wait.state.wait_refs == 0 {
             drop(wait);
             (free)(ptr);
         }
@@ -579,6 +575,7 @@ impl<T> FutureWriter<T> {
             });
         }
 
+        wait.wait.wake_all();
         Future::dec_wait_ref(ptr, wait);
     }
 
