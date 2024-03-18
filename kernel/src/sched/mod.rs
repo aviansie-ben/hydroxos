@@ -6,6 +6,7 @@
 use alloc::{boxed::Box, vec, vec::Vec};
 use core::cell::UnsafeCell;
 
+use self::task::Thread;
 use crate::{arch::interrupt::InterruptFrame, sync::uninterruptible::InterruptDisabler};
 
 pub mod task;
@@ -46,8 +47,15 @@ pub(crate) unsafe fn begin_interrupt() {
 /// hardware interrupt. Failing to call this method or calling it when an asynchronous hardware interrupt is not about to be completed
 /// produces undefined behaviour.
 #[allow(unused)]
-pub(crate) unsafe fn end_interrupt() {
+pub(crate) unsafe fn end_interrupt(interrupt_frame: &mut InterruptFrame) {
     run_soft_interrupts();
+
+    // The interrupt may have caused a Thread to wake up, so if this core is currently idle, attempt a context switch immediately to
+    // ensure we aren't sitting around doing nothing for no reason.
+    if Thread::current_interrupted().is_none() {
+        perform_context_switch_interrupt(None, interrupt_frame);
+    }
+
     *IN_INTERRUPT.get() = false;
 }
 

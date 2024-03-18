@@ -8,7 +8,6 @@ use x86_64::{PrivilegeLevel, VirtAddr};
 
 use super::regs::{GeneralRegister, SavedBasicRegisters};
 use crate::log;
-use crate::sched::task::Thread;
 use crate::sync::uninterruptible::InterruptDisabler;
 use crate::sync::UninterruptibleSpinlock;
 use crate::util::SharedUnsafeCell;
@@ -185,13 +184,6 @@ unsafe extern "C" fn handle_interrupt(frame: &mut InterruptFrame) {
 
             if let &mut Some(ref mut handler) = &mut handlers[usize::from(interrupt_num - IRQS_START)] {
                 handler(frame);
-
-                // The interrupt may have caused a Thread to wake up, so if this core is currently
-                // idle, attempt a context switch immediately to ensure we aren't sitting around
-                // doing nothing for no reason.
-                if Thread::current_interrupted().is_none() {
-                    sched::perform_context_switch_interrupt(None, frame);
-                }
             } else {
                 log!(Warning, "kernel", "Unhandled irq{}", interrupt_num - IRQS_START);
             }
@@ -205,7 +197,7 @@ unsafe extern "C" fn handle_interrupt(frame: &mut InterruptFrame) {
         super::pic::send_eoi(interrupt_num - IRQS_START);
     }
 
-    sched::end_interrupt();
+    sched::end_interrupt(frame);
 }
 
 handler_without_code!(begin_isr0, 0);
