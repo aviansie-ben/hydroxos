@@ -593,16 +593,6 @@ impl<T> FutureWriter<T> {
         }
     }
 
-    /// Creates a new [`Future`] that will resolve to the value written to this writer.
-    pub fn as_future(&self) -> Future<T> {
-        let mut guard = unsafe { (*self.wait).generic.lock() };
-
-        guard.state.wait_refs += 1;
-        guard.state.val_refs += 1;
-
-        Future(FutureInternal::Unresolved(FutureInternalUnresolved::WithVal(self.wait)))
-    }
-
     /// Resolves the future associated with this writer with the provided value.
     pub fn finish(self, val: T) {
         unsafe {
@@ -627,6 +617,18 @@ impl<T> FutureWriter<T> {
             wait: ptr,
             _data: PhantomData
         }
+    }
+}
+
+impl<T: Send + Sync + Clone> FutureWriter<T> {
+    /// Creates a new [`Future`] that will resolve to the value written to this writer.
+    pub fn as_future(&self) -> Future<T> {
+        let mut guard = unsafe { (*self.wait).generic.lock() };
+
+        guard.state.wait_refs += 1;
+        guard.state.val_refs += 1;
+
+        Future(FutureInternal::Unresolved(FutureInternalUnresolved::WithVal(self.wait)))
     }
 }
 

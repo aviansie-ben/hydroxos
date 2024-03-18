@@ -147,7 +147,7 @@ impl<T: KeyboardHeldKeys + ?Sized> KeyboardHeldKeysExt for T {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KeyboardError;
 
 pub trait Keyboard: Device {
