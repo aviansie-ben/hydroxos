@@ -32,6 +32,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
 fn echo_keyboard() {
     use core::fmt::Write;
+
     use dyn_dyn::dyn_dyn_cast;
     use hydroxos_kernel::io::dev::kbd::Keyboard;
     use hydroxos_kernel::io::dev::{self, Device, DeviceNode, DeviceRef};
@@ -39,7 +40,8 @@ fn echo_keyboard() {
 
     let kbd: DeviceRef<dyn Keyboard> =
         dyn_dyn_cast!(move Device => Keyboard [DeviceNode<$>], dev::get_device_by_name("ps2::keyboard").ok().unwrap()).unwrap();
-    let vt: DeviceRef<dyn Tty> = dyn_dyn_cast!(move Device => Tty [DeviceNode<$>], dev::get_device_by_name("vtmgr::vt0").ok().unwrap()).unwrap();
+    let vt: DeviceRef<dyn Tty> =
+        dyn_dyn_cast!(move Device => Tty [DeviceNode<$>], dev::get_device_by_name("vtmgr::vt0").ok().unwrap()).unwrap();
     loop {
         if let Ok(k) = kbd.dev().next_key().unwrap_blocking() {
             let mut w = TtyWriter::new(vt.dev());

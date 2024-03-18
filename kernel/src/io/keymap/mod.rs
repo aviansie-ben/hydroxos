@@ -203,21 +203,27 @@ impl KeycodeMap {
         match k {
             Keycode::Common(k) => match self.common[k as usize] {
                 KeycodeMapEntry::Simple(ch) => ch,
-                KeycodeMapEntry::Shift(ch_false, ch_true) => if mod_state.shift() {
-                    ch_true
-                } else {
-                    ch_false
+                KeycodeMapEntry::Shift(ch_false, ch_true) => {
+                    if mod_state.shift() {
+                        ch_true
+                    } else {
+                        ch_false
+                    }
                 },
-                KeycodeMapEntry::ShiftCaps(ch_false, ch_true) => if mod_state.shift() != lock_state.caps_lock {
-                    ch_true
-                } else {
-                    ch_false
+                KeycodeMapEntry::ShiftCaps(ch_false, ch_true) => {
+                    if mod_state.shift() != lock_state.caps_lock {
+                        ch_true
+                    } else {
+                        ch_false
+                    }
                 },
-                KeycodeMapEntry::NumLock(ch_false, ch_true) => if lock_state.num_lock {
-                    ch_true
-                } else {
-                    ch_false
-                }
+                KeycodeMapEntry::NumLock(ch_false, ch_true) => {
+                    if lock_state.num_lock {
+                        ch_true
+                    } else {
+                        ch_false
+                    }
+                },
             },
             Keycode::DeviceSpecific(_) => None
         }

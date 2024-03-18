@@ -246,11 +246,10 @@ impl Ps2Keyboard {
                 code: key,
                 lock_state: guard.keyboard.lock_state,
                 mods: guard.keyboard.mod_state,
-                char: guard.keyboard.keycode_map.get(
-                    key,
-                    guard.keyboard.lock_state,
-                    guard.keyboard.mod_state
-                )
+                char: guard
+                    .keyboard
+                    .keycode_map
+                    .get(key, guard.keyboard.lock_state, guard.keyboard.mod_state)
             };
 
             if let Some(input_future) = guard.keyboard.input_future.take() {
