@@ -7,11 +7,12 @@ use crate::io::dev::kbd::{KeyPress, Keyboard, KeyboardError, KeyboardHeldKeys, K
 use crate::io::dev::{device_root, DeviceNode};
 use crate::io::dev::{hub::DeviceHub, Device, DeviceRef};
 use crate::io::keymap::{CommonKeycode, Keycode, KeycodeMap};
-use crate::log;
+use crate::io::vt;
 use crate::sync::future::FutureWriter;
 use crate::sync::uninterruptible::{UninterruptibleSpinlockGuard, UninterruptibleSpinlockReadGuard};
 use crate::sync::{Future, UninterruptibleSpinlock};
 use crate::util::{ArrayDeque, SharedUnsafeCell};
+use crate::{log, sched};
 
 mod scancode_2_map;
 
@@ -389,7 +390,7 @@ impl Ps2Mouse {
     }
 }
 
-#[dyn_dyn_impl()]
+#[dyn_dyn_impl]
 impl Device for Ps2Mouse {}
 
 #[derive(Debug)]
@@ -532,6 +533,13 @@ pub unsafe fn init() -> Option<DeviceRef<Ps2Controller>> {
         } else {
             None
         };
+
+        if let Some(ref keyboard) = keyboard {
+            let keyboard = keyboard.clone();
+            sched::enqueue_soft_interrupt(move || {
+                vt::get_global_manager().dev().attach_keyboard(0, keyboard);
+            });
+        }
 
         let mouse = if has_mouse {
             Some(

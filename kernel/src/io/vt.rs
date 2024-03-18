@@ -1,14 +1,18 @@
 use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::fmt::Debug;
 
 use dyn_dyn::dyn_dyn_impl;
 
 use super::dev::hub::{DeviceHub, DeviceHubLockedError};
+use super::dev::kbd::{KeyPress, Keyboard};
 use super::dev::{Device, DeviceNode};
+use super::tty::TtyReadQueue;
 use crate::io::ansi::{AnsiColor, AnsiParser, AnsiParserAction, AnsiParserSgrAction};
 use crate::io::dev::{device_root, DeviceRef};
 use crate::io::tty::Tty;
+use crate::sync::uninterruptible::UninterruptibleSpinlockGuard;
 use crate::sync::{Future, UninterruptibleSpinlock};
 use crate::util::SharedUnsafeCell;
 
@@ -29,7 +33,8 @@ pub struct VirtualTerminalInternals {
     pub fg_color: AnsiColor,
     pub bg_color: AnsiColor,
     pub cursor_hidden: bool,
-    id: usize
+    id: usize,
+    read_queue: TtyReadQueue<64>
 }
 
 impl VirtualTerminalInternals {
@@ -172,9 +177,9 @@ impl VirtualTerminalInternals {
 
     fn redraw(&self) {
         let vtmgr = get_global_manager().dev().internal.lock();
-        for &(ref display, vt_id) in vtmgr.displays.iter() {
-            if vt_id == self.id {
-                display.dev().redraw(self);
+        for info in vtmgr.displays.iter() {
+            if info.terminal_id == self.id {
+                info.display.dev().redraw(self);
             };
         }
     }
@@ -198,8 +203,8 @@ impl Tty for VirtualTerminal {
         Future::done(Ok(()))
     }
 
-    unsafe fn read(&self, _: *mut [u8]) -> Future<Result<usize, ()>> {
-        Future::done(Err(()))
+    unsafe fn read(&self, bytes: *mut [u8]) -> Future<Result<usize, ()>> {
+        self.0.lock().read_queue.read(bytes)
     }
 }
 
@@ -229,8 +234,20 @@ impl VirtualTerminal {
             fg_color: AnsiColor::White,
             bg_color: AnsiColor::Black,
             cursor_hidden: false,
-            id
+            id,
+            read_queue: TtyReadQueue::new()
         }))
+    }
+
+    fn handle_key_pressed(&self, keypress: KeyPress) {
+        if let Some(ch) = keypress.char {
+            let mut vt = self.0.lock();
+
+            if vt.read_queue.has_room(ch.len_utf8()) {
+                let mut ch_bytes = [0_u8; 4];
+                vt.read_queue.push_bytes(ch.encode_utf8(&mut ch_bytes).as_bytes());
+            }
+        }
     }
 }
 
@@ -241,23 +258,33 @@ pub trait TerminalDisplay: Device {
 }
 
 #[derive(Debug)]
+struct DisplayInfo {
+    display: DeviceRef<dyn TerminalDisplay>,
+    keyboard: Option<DeviceRef<dyn Keyboard>>,
+    terminal_id: usize
+}
+
+#[derive(Debug)]
 struct VirtualTerminalManagerInternals {
+    this: Option<DeviceRef<VirtualTerminalManager>>,
     terminals: Vec<DeviceRef<VirtualTerminal>>,
-    displays: Vec<(DeviceRef<dyn TerminalDisplay>, usize)>
+    displays: Vec<DisplayInfo>
 }
 
 impl VirtualTerminalManagerInternals {
     unsafe fn on_connected(&mut self, own_ref: &DeviceRef<VirtualTerminalManager>) {
         assert!(!self.displays.is_empty());
 
-        let (width, height) = self.displays[0].0.dev().size();
+        self.this = Some(own_ref.clone());
+
+        let (width, height) = self.displays[0].display.dev().size();
 
         self.terminals.push(
             DeviceNode::new(Box::from("vt0"), VirtualTerminal::new(0, width, height))
                 .connect(DeviceRef::<VirtualTerminalManager>::downgrade(own_ref))
         );
 
-        self.displays[0].0.dev().redraw(&self.terminals[0].dev().0.lock());
+        self.displays[0].display.dev().redraw(&self.terminals[0].dev().0.lock());
     }
 
     unsafe fn on_disconnected(&mut self) {
@@ -265,6 +292,7 @@ impl VirtualTerminalManagerInternals {
             t.disconnect();
         }
 
+        self.this = None;
         self.terminals = vec![];
         self.displays = vec![];
     }
@@ -290,8 +318,13 @@ impl VirtualTerminalManager {
     fn new(primary_display: DeviceRef<dyn TerminalDisplay>) -> VirtualTerminalManager {
         VirtualTerminalManager {
             internal: UninterruptibleSpinlock::new(VirtualTerminalManagerInternals {
+                this: None,
                 terminals: vec![],
-                displays: vec![(primary_display, 0)]
+                displays: vec![DisplayInfo {
+                    display: primary_display,
+                    keyboard: None,
+                    terminal_id: 0
+                }]
             })
         }
     }
@@ -308,8 +341,8 @@ impl VirtualTerminalManager {
             let vt = vtmgr.terminals[terminal_id].dev().0.lock();
 
             if display_id < vtmgr.displays.len() {
-                vtmgr.displays[display_id].1 = terminal_id;
-                vtmgr.displays[display_id].0.dev().redraw(&vt);
+                vtmgr.displays[display_id].terminal_id = terminal_id;
+                vtmgr.displays[display_id].display.dev().redraw(&vt);
                 true
             } else {
                 false
@@ -317,6 +350,36 @@ impl VirtualTerminalManager {
         } else {
             false
         }
+    }
+
+    fn handle_key_pressed(&self, display_id: usize, keypress: KeyPress) {
+        let mut vtmgr = self.internal.lock();
+
+        let vt = &vtmgr.terminals[vtmgr.displays[display_id].terminal_id];
+
+        vt.dev().handle_key_pressed(keypress);
+        self.listen_for_keypress(&mut vtmgr, display_id);
+    }
+
+    fn listen_for_keypress(&self, vtmgr: &mut UninterruptibleSpinlockGuard<VirtualTerminalManagerInternals>, display_id: usize) {
+        if let Some(ref keyboard) = vtmgr.displays[display_id].keyboard {
+            let this = vtmgr.this.clone().unwrap();
+
+            keyboard.dev().next_key().when_resolved_soft(move |keypress| match keypress {
+                Ok(keypress) => {
+                    this.dev().handle_key_pressed(display_id, keypress);
+                },
+                Err(_) => unimplemented!()
+            });
+        }
+    }
+
+    pub fn attach_keyboard(&self, display_id: usize, keyboard: DeviceRef<dyn Keyboard>) {
+        let mut vtmgr = self.internal.lock();
+
+        assert!(vtmgr.displays[display_id].keyboard.is_none());
+        vtmgr.displays[display_id].keyboard = Some(keyboard);
+        self.listen_for_keypress(&mut vtmgr, display_id);
     }
 }
 

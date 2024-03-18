@@ -34,21 +34,14 @@ fn echo_keyboard() {
     use core::fmt::Write;
 
     use dyn_dyn::dyn_dyn_cast;
-    use hydroxos_kernel::io::dev::kbd::Keyboard;
     use hydroxos_kernel::io::dev::{self, Device, DeviceNode, DeviceRef};
-    use hydroxos_kernel::io::tty::{Tty, TtyWriter};
+    use hydroxos_kernel::io::tty::{Tty, TtyCharReader, TtyWriter};
 
-    let kbd: DeviceRef<dyn Keyboard> =
-        dyn_dyn_cast!(move Device => Keyboard [DeviceNode<$>], dev::get_device_by_name("ps2::keyboard").ok().unwrap()).unwrap();
     let vt: DeviceRef<dyn Tty> =
         dyn_dyn_cast!(move Device => Tty [DeviceNode<$>], dev::get_device_by_name("vtmgr::vt0").ok().unwrap()).unwrap();
     loop {
-        if let Ok(k) = kbd.dev().next_key().unwrap_blocking() {
-            let mut w = TtyWriter::new(vt.dev());
-
-            if let Some(ch) = k.char {
-                write!(w, "{}", ch).unwrap();
-            }
+        if let Ok(ch) = TtyCharReader::new(vt.dev()).next_char() {
+            write!(TtyWriter::new(vt.dev()), "{}", ch).unwrap();
         }
     }
 }
