@@ -70,7 +70,7 @@ impl Process {
     /// This method must only be called once during startup from the bootstrap processor. This should be called early during the startup
     /// process, as calling [`Process::kernel`] is technically unsafe until this method is called.
     pub(super) unsafe fn init_kernel_process() {
-        debug_assert!(NEXT_PID.load(Ordering::Relaxed) == 0);
+        debug_assert!(!Process::is_initialized());
 
         ptr::write((*KERNEL_PROCESS.get()).as_mut_ptr(), Process::create_internal(0, None));
         NEXT_PID.store(1, Ordering::Relaxed);
@@ -80,12 +80,17 @@ impl Process {
         *CURRENT_THREAD.get() = Some(init_thread);
     }
 
+    /// Checks whether kernel process initialization has been completed by calling [`Process::init_kernel_process`].
+    pub(super) fn is_initialized() -> bool {
+        NEXT_PID.load(Ordering::Relaxed) > 0
+    }
+
     /// Gets a reference to the kernel process.
     pub fn kernel() -> &'static Pin<Arc<Process>> {
         // SAFETY: KERNEL_PROCESS is only set once during initialization, so it is safe to get shared references to it once initialization
         //         is complete.
         unsafe {
-            debug_assert!(NEXT_PID.load(Ordering::Relaxed) > 0);
+            debug_assert!(Process::is_initialized());
             &*(*KERNEL_PROCESS.get()).as_ptr()
         }
     }

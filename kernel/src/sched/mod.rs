@@ -6,7 +6,7 @@
 use alloc::{boxed::Box, vec, vec::Vec};
 use core::cell::UnsafeCell;
 
-use self::task::Thread;
+use self::task::{Process, Thread};
 use crate::{arch::interrupt::InterruptFrame, sync::uninterruptible::InterruptDisabler};
 
 pub mod task;
@@ -52,7 +52,7 @@ pub(crate) unsafe fn end_interrupt(interrupt_frame: &mut InterruptFrame) {
 
     // The interrupt may have caused a Thread to wake up, so if this core is currently idle, attempt a context switch immediately to
     // ensure we aren't sitting around doing nothing for no reason.
-    if Thread::current_interrupted().is_none() {
+    if Thread::current_interrupted().is_none() && Process::is_initialized() {
         perform_context_switch_interrupt(None, interrupt_frame);
     }
 
