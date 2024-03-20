@@ -66,7 +66,7 @@ impl<T: Device> DeviceNode<T> {
         self.parent = parent;
         self.disconnect_event = UninterruptibleSpinlock::new(Some(FutureWriter::new()));
 
-        let dev = Arc::new(self);
+        let dev = DeviceRef::new(self);
 
         unsafe {
             dev.dev.on_connected(&dev);
@@ -145,7 +145,7 @@ static DEVICE_ROOT: SharedUnsafeCell<Option<DeviceRef<VirtualDeviceHub>>> = Shar
 pub(crate) unsafe fn init_device_root() {
     debug_assert!((*DEVICE_ROOT.get()).is_none());
 
-    let device_root = Arc::new(DeviceNode::new(Box::from("(root)"), VirtualDeviceHub::new()));
+    let device_root = DeviceRef::new(DeviceNode::new(Box::from("(root)"), VirtualDeviceHub::new()));
 
     device_root.dev.on_connected(&device_root);
     *DEVICE_ROOT.get() = Some(device_root);

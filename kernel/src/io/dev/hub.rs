@@ -1,4 +1,3 @@
-use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::Debug;
@@ -65,7 +64,7 @@ struct VirtualDeviceHubInternals {
 impl VirtualDeviceHubInternals {
     pub fn new() -> VirtualDeviceHubInternals {
         VirtualDeviceHubInternals {
-            own_ref: Weak::new(),
+            own_ref: DeviceWeak::new(),
             children: vec![]
         }
     }
@@ -95,11 +94,11 @@ impl VirtualDeviceHubInternals {
     }
 
     unsafe fn on_connected(&mut self, own_ref: &DeviceRef<VirtualDeviceHub>) {
-        self.own_ref = Arc::downgrade(own_ref);
+        self.own_ref = DeviceRef::downgrade(own_ref);
     }
 
     unsafe fn on_disconnected(&mut self) {
-        self.own_ref = Weak::new();
+        self.own_ref = DeviceWeak::new();
         for child in self.children.drain(..) {
             child.disconnect();
         }
