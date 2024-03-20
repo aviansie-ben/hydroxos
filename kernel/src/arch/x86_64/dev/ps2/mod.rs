@@ -380,9 +380,7 @@ impl Ps2Mouse {
 
     fn handle_interrupt(guard: &mut Ps2MouseGuard) {
         match guard.controller().controller.read_data() {
-            Ok(b) => {
-                log!(Info, "ps2", "Mouse: {:02x}", b);
-            },
+            Ok(_) => {},
             Err(err) => {
                 log!(Error, "ps2", "Error reading data from mouse: {:?}", err);
             }
