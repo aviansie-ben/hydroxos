@@ -5,9 +5,12 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt;
 use core::fmt::Debug;
+use core::marker::Unsize;
+use core::ops::{CoerceUnsized, Deref};
 use core::ptr;
+use core::ptr::Pointee;
 
-use dyn_dyn::{dyn_dyn_base, dyn_dyn_cast, dyn_dyn_impl, DynDynBase, DynDynTable, GetDynDynTable};
+use dyn_dyn::{dyn_dyn_base, dyn_dyn_cast, dyn_dyn_impl, DowncastUnchecked, DynDynBase, DynDynTable, GetDynDynTable};
 
 use crate::io::dev::hub::{DeviceHub, DeviceHubExt, DeviceHubLockedError, VirtualDeviceHub};
 use crate::log;
@@ -18,8 +21,92 @@ use crate::util::SharedUnsafeCell;
 pub mod hub;
 pub mod kbd;
 
-pub type DeviceRef<T> = Arc<DeviceNode<T>>;
-pub type DeviceWeak<T> = Weak<DeviceNode<T>>;
+pub struct DeviceRef<T: ?Sized>(Arc<DeviceNode<T>>);
+
+impl<T> DeviceRef<T> {
+    pub fn new(val: DeviceNode<T>) -> DeviceRef<T> {
+        DeviceRef(Arc::new(val))
+    }
+}
+
+impl<T: ?Sized> DeviceRef<T> {
+    pub fn downgrade(dev: &Self) -> DeviceWeak<T> {
+        DeviceWeak(Arc::downgrade(&dev.0))
+    }
+}
+
+impl<T: ?Sized> Clone for DeviceRef<T> {
+    fn clone(&self) -> Self {
+        DeviceRef(self.0.clone())
+    }
+}
+
+impl<T: ?Sized> Deref for DeviceRef<T> {
+    type Target = DeviceNode<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<DeviceRef<U>> for DeviceRef<T> {}
+
+impl<T: ?Sized> Debug for DeviceRef<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "DeviceRef({})", self.full_name())
+    }
+}
+
+unsafe impl<B: ?Sized + DynDynBase, T: ?Sized + Unsize<B>> GetDynDynTable<B> for DeviceRef<T> {
+    type DynTarget = T;
+
+    fn get_dyn_dyn_table(&self) -> DynDynTable {
+        B::get_dyn_dyn_table(self.dev())
+    }
+}
+
+impl<'a, T: ?Sized + 'a> DowncastUnchecked<'a> for DeviceRef<T> {
+    type DowncastResult<D: ?Sized + 'a> = DeviceRef<D>;
+
+    unsafe fn downcast_unchecked<D: ?Sized + Pointee>(self, metadata: <D as Pointee>::Metadata) -> DeviceRef<D> {
+        DeviceRef(DowncastUnchecked::downcast_unchecked::<DeviceNode<D>>(self.0, metadata))
+    }
+}
+
+pub struct DeviceWeak<T: ?Sized>(Weak<DeviceNode<T>>);
+
+impl<T> DeviceWeak<T> {
+    fn new() -> Self {
+        Self(Weak::new())
+    }
+}
+
+impl<T: ?Sized> DeviceWeak<T> {
+    fn strong_count(&self) -> usize {
+        self.0.strong_count()
+    }
+
+    fn upgrade(&self) -> Option<DeviceRef<T>> {
+        self.0.upgrade().map(DeviceRef)
+    }
+}
+
+impl<T: ?Sized> Clone for DeviceWeak<T> {
+    fn clone(&self) -> Self {
+        DeviceWeak(self.0.clone())
+    }
+}
+
+impl<T: ?Sized> Debug for DeviceWeak<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0.upgrade() {
+            Some(val) => write!(f, "DeviceWeak({})", val.full_name()),
+            None => write!(f, "DeviceWeak(<freed>)")
+        }
+    }
+}
+
+impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<DeviceWeak<U>> for DeviceWeak<T> {}
 
 pub struct DeviceNotFoundError;
 

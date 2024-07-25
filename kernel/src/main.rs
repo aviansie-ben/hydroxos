@@ -34,11 +34,11 @@ fn echo_keyboard() {
     use core::fmt::Write;
 
     use dyn_dyn::dyn_dyn_cast;
-    use hydroxos_kernel::io::dev::{self, Device, DeviceNode, DeviceRef};
+    use hydroxos_kernel::io::dev::{self, Device, DeviceRef};
     use hydroxos_kernel::io::tty::{Tty, TtyCharReader, TtyWriter};
 
     let vt: DeviceRef<dyn Tty> =
-        dyn_dyn_cast!(move Device => Tty [DeviceNode<$>], dev::get_device_by_name("vtmgr::vt0").ok().unwrap()).unwrap();
+        dyn_dyn_cast!(move Device => Tty, dev::get_device_by_name("vtmgr::vt0").ok().unwrap()).unwrap();
     loop {
         if let Ok(ch) = TtyCharReader::new(vt.dev()).next_char() {
             write!(TtyWriter::new(vt.dev()), "{}", ch).unwrap();
