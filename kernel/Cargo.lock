@@ -40,9 +40,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "dyn-dyn"
-version = "0.1.2"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b35159d2c174450867fbfae32d411f7c755db98cab06d42940e03bae46cba00d"
+checksum = "a0ebc73b994401e6849e957d0ecf507a9b1033bccb9ae244568b2cf446fd8830"
 dependencies = [
  "cfg-if",
  "dyn-dyn-macros",
@@ -51,9 +51,9 @@ dependencies = [
 
 [[package]]
 name = "dyn-dyn-macros"
-version = "0.1.2"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90ddcac685d83a873b0de796f6f39074a12c4fedb3857eec6cf3b3bb75361edb"
+checksum = "2c2c61f2b2a1efa5027b46082b798c62760f99bb7b8c43cf96fa4583e2795603"
 dependencies = [
  "proc-macro2",
  "quote",
