@@ -213,14 +213,18 @@ struct DeviceFullName<'a, T: ?Sized>(&'a DeviceNode<T>);
 impl<'a, T: ?Sized> fmt::Display for DeviceFullName<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let DeviceFullName(dev) = *self;
+        let root_dev = &**device_root() as *const _ as *const ();
 
         if let Some(parent) = dev.parent.upgrade() {
-            write!(f, "{}::{}", DeviceFullName(&*parent), dev.name)?;
-        } else if !ptr::eq(
-            &**device_root() as *const DeviceNode<dyn Device> as *const DeviceNode<()>,
-            dev as *const DeviceNode<T> as *const DeviceNode<()>
-        ) {
+            if ptr::eq(root_dev, &*parent as *const _ as *const ()) {
+                write!(f, "::{}", dev.name)?;
+            } else {
+                write!(f, "{}::{}", DeviceFullName(&*parent), dev.name)?;
+            }
+        } else if !ptr::eq(root_dev, dev as *const _ as *const ()) {
             write!(f, "(???)::{}", dev.name)?;
+        } else {
+            write!(f, "{}", dev.name)?;
         }
 
         Ok(())
@@ -273,10 +277,15 @@ pub fn get_device_by_name(mut name: &str) -> Result<DeviceRef<dyn Device>, Devic
     }
 }
 
-pub fn log_device_tree() {
+fn print_device_tree_internal<E>(root: &DeviceRef<dyn Device>, mut f: impl FnMut(&str) -> Result<(), E>) -> Result<(), E> {
     let mut line = String::new();
 
-    fn dump_dev(line: &mut String, dev: &DeviceRef<dyn Device>, indent: u32) {
+    fn dump_dev<E>(
+        f: &mut impl FnMut(&str) -> Result<(), E>,
+        line: &mut String,
+        dev: &DeviceRef<dyn Device>,
+        indent: u32
+    ) -> Result<(), E> {
         use core::fmt::Write;
 
         line.clear();
@@ -334,13 +343,13 @@ pub fn log_device_tree() {
             write!(line, " ]").unwrap();
         }
 
-        log!(Debug, "dev", "{}", line);
+        f(line)?;
 
         match children {
             Some(Ok(mut children)) => {
                 children.sort_by(|a, b| a.name().cmp(b.name()));
                 for child in children {
-                    dump_dev(line, &child, indent + 1);
+                    dump_dev(f, line, &child, indent + 1)?;
                 }
             },
             Some(Err(_)) => {
@@ -351,11 +360,25 @@ pub fn log_device_tree() {
 
                 write!(line, "(hub locked)").unwrap();
 
-                log!(Debug, "dev", "{}", line);
+                f(line)?;
             },
             None => {}
         }
+
+        Ok(())
     }
 
-    dump_dev(&mut line, &(device_root().clone() as DeviceRef<dyn Device>), 0);
+    dump_dev(&mut f, &mut line, root, 0)
+}
+
+pub fn print_device_tree<T: fmt::Write>(w: &mut T, root: &DeviceRef<dyn Device>) -> Result<(), fmt::Error> {
+    print_device_tree_internal(root, |line| writeln!(w, "{}", line))
+}
+
+pub fn log_device_tree() {
+    print_device_tree_internal(&(device_root().clone() as DeviceRef<dyn Device>), |line| {
+        log!(Debug, "dev", "{}", line);
+        Ok(()) as Result<(), ()>
+    })
+    .unwrap();
 }

@@ -175,7 +175,7 @@ impl<T, const N: usize> ArrayDeque<T, N> {
 
     fn idx(head: usize, idx: usize) -> usize {
         if idx >= N - head {
-            head.wrapping_sub(N).wrapping_add(idx)
+            idx - (N - head)
         } else {
             head + idx
         }
@@ -188,6 +188,40 @@ impl<T, const N: usize> ArrayDeque<T, N> {
     fn tail_inclusive(&self) -> usize {
         assert!(self.len != 0);
         Self::idx(self.head, self.len - 1)
+    }
+
+    pub fn get(&self, idx: usize) -> Option<&T> {
+        if idx < self.len {
+            // SAFETY: We just bounds checked
+            Some(unsafe { self.data[Self::idx(self.head, idx)].assume_init_ref() })
+        } else {
+            None
+        }
+    }
+
+    pub fn get_mut(&mut self, idx: usize) -> Option<&mut T> {
+        if idx < self.len {
+            // SAFETY: We just bounds checked
+            Some(unsafe { self.data[Self::idx(self.head, idx)].assume_init_mut() })
+        } else {
+            None
+        }
+    }
+
+    pub fn front(&self) -> Option<&T> {
+        self.get(0)
+    }
+
+    pub fn back(&self) -> Option<&T> {
+        self.get(self.len.wrapping_sub(1))
+    }
+
+    pub fn front_mut(&mut self) -> Option<&mut T> {
+        self.get_mut(0)
+    }
+
+    pub fn back_mut(&mut self) -> Option<&mut T> {
+        self.get_mut(self.len.wrapping_sub(1))
     }
 
     pub fn pop_front(&mut self) -> Option<T> {

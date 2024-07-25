@@ -374,7 +374,11 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for UninterruptibleSpinlock<T> {
 
         match self.try_lock() {
             Some(guard) => {
-                write!(f, "{:?}", &*guard)?;
+                if f.alternate() {
+                    write!(f, "{:#?}", &*guard)?;
+                } else {
+                    write!(f, "{:?}", &*guard)?;
+                }
             },
             None => {
                 write!(f, "<locked>")?;
@@ -431,7 +435,13 @@ impl<'a, T: ?Sized> DerefMut for UninterruptibleSpinlockGuard<'a, T> {
 
 impl<'a, T: ?Sized + fmt::Debug> fmt::Debug for UninterruptibleSpinlockGuard<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "UninterruptibleSpinlockGuard@{:p}({:?})", self.0.get_lock(), self.1)
+        write!(f, "UninterruptibleSpinlockGuard@{:p}", self.0.get_lock())?;
+
+        if f.alternate() {
+            write!(f, "({:#?})", self.1)
+        } else {
+            write!(f, "({:?})", self.1)
+        }
     }
 }
 
@@ -470,7 +480,13 @@ impl<'a, T: ?Sized> Deref for UninterruptibleSpinlockReadGuard<'a, T> {
 
 impl<'a, T: ?Sized + fmt::Debug> fmt::Debug for UninterruptibleSpinlockReadGuard<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "UninterruptibleSpinlockReadGuard@{:p}({:?})", self.0.get_lock(), self.1)
+        write!(f, "UninterruptibleSpinlockReadGuard@{:p}", self.0.get_lock())?;
+
+        if f.alternate() {
+            write!(f, "({:#?})", self.1)
+        } else {
+            write!(f, "({:?})", self.1)
+        }
     }
 }
 

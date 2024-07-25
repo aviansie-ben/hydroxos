@@ -30,6 +30,7 @@ use bootloader::BootInfo;
 pub mod log;
 
 pub mod arch;
+pub mod cmd;
 pub mod early_alloc;
 pub mod frame_alloc;
 pub mod io;

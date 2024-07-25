@@ -4,6 +4,7 @@ use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::UnsafeCell;
+use core::fmt;
 use core::marker::PhantomData;
 use core::mem;
 use core::mem::MaybeUninit;
@@ -240,7 +241,6 @@ impl<T: Send + Sync + Clone> Clone for FutureInternal<T> {
 /// Note that the model of how futures work here requires that all futures resolve to a value at some point in the future. Creating a future
 /// but failing to ever resolve it will leak internal memory used to track futures that are waiting to be resolved and can result in threads
 /// being left in a state where they are stuck waiting and cannot be killed normally.
-#[derive(Debug)]
 #[must_use]
 pub struct Future<T>(FutureInternal<T>);
 
@@ -543,6 +543,29 @@ impl Future<()> {
     }
 }
 
+impl<T: fmt::Debug> fmt::Debug for Future<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            FutureInternal::Unresolved(FutureInternalUnresolved::WithVal(ptr)) => {
+                write!(f, "Future@{:p}", ptr)
+            },
+            FutureInternal::Unresolved(FutureInternalUnresolved::WithoutVal(ptr, _)) => {
+                write!(f, "Future@{:p}", ptr)
+            },
+            FutureInternal::Done(ref val) => {
+                if f.alternate() {
+                    write!(f, "Future({:#?})", val)
+                } else {
+                    write!(f, "Future({:?})", val)
+                }
+            },
+            FutureInternal::Invalid => {
+                write!(f, "Future@INVALID")
+            }
+        }
+    }
+}
+
 impl<T: Send + Sync + Clone> Clone for Future<T> {
     fn clone(&self) -> Self {
         Future(self.0.clone())
@@ -555,7 +578,6 @@ impl<T: Send + Sync + Clone> Clone for Future<T> {
 /// Dropping or leaking a value of this type is generally not advisable, as doing so will cause all threads waiting on this future to hang
 /// forever and will leak memory used internally to track the state of unresolved futures. For that reason, attempting to drop a value of
 /// this type except by calling [`FutureWriter::finish`] will panic.
-#[derive(Debug)]
 #[must_use]
 pub struct FutureWriter<T> {
     wait: *const FutureWait<T>,
@@ -629,6 +651,12 @@ impl<T: Send + Sync + Clone> FutureWriter<T> {
         guard.state.val_refs += 1;
 
         Future(FutureInternal::Unresolved(FutureInternalUnresolved::WithVal(self.wait)))
+    }
+}
+
+impl<T> fmt::Debug for FutureWriter<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "FutureWriter@{:p}", self.wait)
     }
 }
 

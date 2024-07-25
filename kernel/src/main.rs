@@ -26,24 +26,18 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     };
 
     log!(Info, "kernel", "Done booting");
-    echo_keyboard();
+    show_command_prompt();
     hydroxos_kernel::arch::halt();
 }
 
-fn echo_keyboard() {
-    use core::fmt::Write;
-
+fn show_command_prompt() {
     use dyn_dyn::dyn_dyn_cast;
-    use hydroxos_kernel::io::dev::{self, Device, DeviceRef};
-    use hydroxos_kernel::io::tty::{Tty, TtyCharReader, TtyWriter};
+    use hydroxos_kernel::cmd::show_debug_console;
+    use hydroxos_kernel::io::dev::{self, Device};
+    use hydroxos_kernel::io::tty::Tty;
 
-    let vt: DeviceRef<dyn Tty> =
-        dyn_dyn_cast!(move Device => Tty, dev::get_device_by_name("vtmgr::vt0").ok().unwrap()).unwrap();
-    loop {
-        if let Ok(ch) = TtyCharReader::new(vt.dev()).next_char() {
-            write!(TtyWriter::new(vt.dev()), "{}", ch).unwrap();
-        }
-    }
+    let vt = dyn_dyn_cast!(move Device => Tty, dev::get_device_by_name("vtmgr::vt0").ok().unwrap()).unwrap();
+    show_debug_console(vt.dev());
 }
 
 #[cfg(test)]
