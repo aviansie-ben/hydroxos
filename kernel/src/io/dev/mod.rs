@@ -76,17 +76,17 @@ impl<'a, T: ?Sized + 'a> DowncastUnchecked<'a> for DeviceRef<T> {
 pub struct DeviceWeak<T: ?Sized>(Weak<DeviceNode<T>>);
 
 impl<T> DeviceWeak<T> {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self(Weak::new())
     }
 }
 
 impl<T: ?Sized> DeviceWeak<T> {
-    fn strong_count(&self) -> usize {
+    pub fn strong_count(&self) -> usize {
         self.0.strong_count()
     }
 
-    fn upgrade(&self) -> Option<DeviceRef<T>> {
+    pub fn upgrade(&self) -> Option<DeviceRef<T>> {
         self.0.upgrade().map(DeviceRef)
     }
 }
