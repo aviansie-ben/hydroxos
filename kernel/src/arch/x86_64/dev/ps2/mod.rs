@@ -285,6 +285,7 @@ impl Ps2Keyboard {
                     }
                 }
             },
+            Err(ps2::error::ControllerError::Timeout) => {},
             Err(err) => {
                 log!(Error, "ps2", "Error reading data from keyboard: {:?}", err);
             }

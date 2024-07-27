@@ -53,6 +53,11 @@ pub(crate) unsafe fn init_phase_1(boot_info: &BootInfo) {
 
     crate::io::dev::init_device_root();
 
+    let serial = dev::serial::init();
+
+    // TODO Should probably allow the user to control this
+    crate::log::init(serial);
+
     let vga_text = crate::io::dev::device_root()
         .dev()
         .add_device(DeviceNode::new(Box::from("vgatext"), VgaTextBufferDevice::for_primary_display()));

@@ -6,6 +6,7 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [package.metadata.bootimage]
+run-args = ["-serial", "stdio", "-cpu", "qemu64,+xsave,+xsaveopt"]
 test-args = ["-device", "isa-debug-exit,iobase=0xf4,iosize=0x4", "-serial", "stdio", "-display", "none", "-cpu", "qemu64,+xsave,+xsaveopt"]
 test-success-exit-code = 1
 

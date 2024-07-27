@@ -16,7 +16,7 @@ pub static KEYMAP: KeycodeMap = {
     keymap.set_common(CommonKeycode::Num0, KeycodeMapEntry::Shift(Some('0'), Some(')')));
     keymap.set_common(CommonKeycode::Minus, KeycodeMapEntry::Shift(Some('-'), Some('_')));
     keymap.set_common(CommonKeycode::Equal, KeycodeMapEntry::Shift(Some('='), Some('+')));
-    keymap.set_common(CommonKeycode::Backspace, KeycodeMapEntry::Simple(Some('\x08')));
+    keymap.set_common(CommonKeycode::Backspace, KeycodeMapEntry::Simple(Some('\x7f')));
 
     keymap.set_common(CommonKeycode::LeftBracket, KeycodeMapEntry::Shift(Some('['), Some('{')));
     keymap.set_common(CommonKeycode::RightBracket, KeycodeMapEntry::Shift(Some(']'), Some('}')));

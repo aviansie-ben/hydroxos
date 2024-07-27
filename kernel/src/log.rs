@@ -1,13 +1,14 @@
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::ptr;
 
 use crate::io::ansi::AnsiColor;
 use crate::io::dev::DeviceRef;
 use crate::io::tty::Tty;
 use crate::sync::{Future, UninterruptibleSpinlock};
 
-static OUT_TTY: UninterruptibleSpinlock<Vec<DeviceRef<dyn Tty + Send + Sync>>> = UninterruptibleSpinlock::new(vec![]);
+static OUT_TTY: UninterruptibleSpinlock<Vec<DeviceRef<dyn Tty>>> = UninterruptibleSpinlock::new(vec![]);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LogLevel {
@@ -43,8 +44,14 @@ impl LogLevel {
     }
 }
 
-pub fn init(out: DeviceRef<dyn Tty + Send + Sync>) {
+pub fn init(out: DeviceRef<dyn Tty>) {
     OUT_TTY.lock().push(out);
+}
+
+pub fn remove_tty(out: &DeviceRef<dyn Tty>) {
+    let mut out_tty = OUT_TTY.lock();
+
+    out_tty.retain(|tty| !ptr::eq(tty.dev() as *const _ as *const (), out.dev() as *const _ as *const ()));
 }
 
 pub fn log_msg(msg: String) {

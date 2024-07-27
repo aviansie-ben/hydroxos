@@ -9,6 +9,7 @@
 #![feature(naked_functions)]
 #![feature(negative_impls)]
 #![feature(ptr_metadata)]
+#![feature(slice_ptr_get)]
 #![feature(thread_local)]
 #![feature(try_blocks)]
 #![feature(unsize)]

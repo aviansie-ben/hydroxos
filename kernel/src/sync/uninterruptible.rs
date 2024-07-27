@@ -33,7 +33,7 @@ use core::ptr;
 use x86_64::instructions::interrupts;
 
 use crate::sched;
-use crate::util::SharedUnsafeCell;
+use crate::util::{DebugOrDefault, SharedUnsafeCell};
 
 #[thread_local]
 static INTERRUPT_DISABLER_STATE: Cell<(usize, bool)> = Cell::new((0, false));
@@ -368,16 +368,16 @@ impl<T: ?Sized> UninterruptibleSpinlock<T> {
     }
 }
 
-impl<T: ?Sized + fmt::Debug> fmt::Debug for UninterruptibleSpinlock<T> {
+impl<T: ?Sized> fmt::Debug for UninterruptibleSpinlock<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "UninterruptibleSpinlock@{:p}(", self)?;
 
         match self.try_lock() {
             Some(guard) => {
                 if f.alternate() {
-                    write!(f, "{:#?}", &*guard)?;
+                    write!(f, "{:#?}", DebugOrDefault(&*guard))?;
                 } else {
-                    write!(f, "{:?}", &*guard)?;
+                    write!(f, "{:?}", DebugOrDefault(&*guard))?;
                 }
             },
             None => {

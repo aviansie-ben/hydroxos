@@ -14,11 +14,12 @@ fn readline<T: Tty + ?Sized>(r: &mut TtyCharReader<T>, w: &mut TtyWriter<T>) -> 
                 let _ = writeln!(w);
                 return Ok(s);
             },
-            Ok('\x08') => {
+            Ok('\x7f') => {
                 if s.pop().is_some() {
-                    let _ = write!(w, "\x08");
+                    let _ = write!(w, "\x08 \x08");
                 }
             },
+            Ok('\x00'..='\x1f') => {},
             Ok(ch) => {
                 let mut ch_bytes = [0_u8; 4];
                 let _ = write!(w, "{}", ch.encode_utf8(&mut ch_bytes));
@@ -144,6 +145,8 @@ pub fn show_debug_console<T: Tty + ?Sized>(tty: &T) {
             }
         } else {
             let _ = writeln!(w);
+            let _ = writeln!(w, "io error, exiting hkd");
+            break;
         }
     }
 }

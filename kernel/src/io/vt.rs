@@ -120,18 +120,10 @@ impl VirtualTerminalInternals {
                 self.new_line();
             },
             '\x08' => {
-                let ok = if self.cursor_pos.0 > 0 {
+                if self.cursor_pos.0 > 0 {
                     self.cursor_pos.0 -= 1;
-                    true
                 } else if self.cursor_pos.1 > 0 {
                     self.cursor_pos = (self.size.0 - 1, self.cursor_pos.1 - 1);
-                    true
-                } else {
-                    false
-                };
-
-                if ok {
-                    self.buf[self.cursor_off()].ch = ' ';
                 }
             },
             '\x00'..='\x1f' | '\x7f' => {},

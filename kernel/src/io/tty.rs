@@ -6,7 +6,7 @@ use crate::{
     util::ArrayDeque
 };
 
-pub trait Tty {
+pub trait Tty: Send + Sync {
     unsafe fn write(&self, bytes: *const [u8]) -> Future<Result<(), ()>>;
     unsafe fn flush(&self) -> Future<Result<(), ()>>;
 

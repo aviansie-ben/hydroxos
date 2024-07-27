@@ -49,6 +49,20 @@ impl<T> DerefMut for PageAligned<T> {
     }
 }
 
+pub struct DebugOrDefault<'a, T: ?Sized>(pub &'a T);
+
+impl<'a, T: ?Sized> fmt::Debug for DebugOrDefault<'a, T> {
+    default fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "..")
+    }
+}
+
+impl<'a, T: ?Sized + fmt::Debug> fmt::Debug for DebugOrDefault<'a, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 trait CloneOrPanic {
     fn clone_or_panic(&self) -> Self;
 }

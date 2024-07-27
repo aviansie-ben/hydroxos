@@ -108,6 +108,7 @@ impl<T: ?Sized> Debug for DeviceWeak<T> {
 
 impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<DeviceWeak<U>> for DeviceWeak<T> {}
 
+#[derive(Debug)]
 pub struct DeviceNotFoundError;
 
 #[dyn_dyn_base]
