@@ -3,6 +3,7 @@ use core::fmt;
 use dyn_dyn::dyn_dyn_impl;
 use x86_64::instructions::port::Port;
 
+use super::super::page::PhysMemPtr;
 use crate::arch::page;
 use crate::arch::PhysAddr;
 use crate::io::ansi::AnsiColor;
@@ -74,22 +75,19 @@ struct ScreenChar {
 
 #[derive(Debug)]
 pub struct VgaTextBuffer {
-    buf: *mut ScreenChar,
+    buf: PhysMemPtr<[ScreenChar]>,
     width: usize,
     height: usize
 }
 
 impl VgaTextBuffer {
-    pub unsafe fn new(buf: *mut u8, width: usize, height: usize) -> VgaTextBuffer {
-        VgaTextBuffer {
-            buf: buf as *mut ScreenChar,
-            width,
-            height
-        }
+    unsafe fn new(buf: PhysMemPtr<[ScreenChar]>, width: usize, height: usize) -> VgaTextBuffer {
+        assert_eq!(width.checked_mul(height), Some(buf.ptr().len()));
+        VgaTextBuffer { buf, width, height }
     }
 
     pub unsafe fn for_primary_display() -> VgaTextBuffer {
-        VgaTextBuffer::new(page::get_phys_mem_ptr_mut(PhysAddr::new(0xb8000)), 80, 25)
+        VgaTextBuffer::new(page::get_phys_mem_ptr_slice(PhysAddr::new(0xb8000), 80 * 25), 80, 25)
     }
 
     pub fn size(&self) -> (usize, usize) {
@@ -104,7 +102,7 @@ impl VgaTextBuffer {
 
         for i in 0..(self.width * self.height) {
             unsafe {
-                core::ptr::write_volatile(self.buf.add(i), clear_char);
+                core::ptr::write_volatile(self.buf.ptr().get_unchecked_mut(i), clear_char);
             };
         }
     }
@@ -114,7 +112,7 @@ impl VgaTextBuffer {
         assert!(y < self.height);
 
         unsafe {
-            core::ptr::write_volatile(self.buf.add(y * self.width + x), ScreenChar {
+            core::ptr::write_volatile(self.buf.ptr().get_unchecked_mut(y * self.width + x), ScreenChar {
                 ch,
                 color: ColorCode::new(fg_color, bg_color)
             });
@@ -129,8 +127,8 @@ impl VgaTextBuffer {
 
         unsafe {
             core::ptr::write_volatile(
-                self.buf.add(to_y * self.width + to_x),
-                core::ptr::read_volatile(self.buf.add(from_y * self.width + from_y))
+                self.buf.ptr().get_unchecked_mut(to_y * self.width + to_x),
+                core::ptr::read_volatile(self.buf.ptr().get_unchecked_mut(from_y * self.width + from_y))
             );
         }
     }

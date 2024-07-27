@@ -14,6 +14,7 @@ use crate::util::SharedUnsafeCell;
 use crate::virtual_alloc::{VirtualAllocRegion, VirtualAllocator};
 
 pub const PAGE_SIZE: usize = 4096;
+pub const IS_PHYS_MEM_ALWAYS_MAPPED: bool = true;
 
 static PHYS_MEM_BASE: SharedUnsafeCell<*mut u8> = SharedUnsafeCell::new(ptr::null_mut());
 static KERNEL_ADDRESS_SPACE: SharedUnsafeCell<UninterruptibleSpinlock<AddressSpace>> =
@@ -37,23 +38,40 @@ pub fn get_phys_mem_base() -> *mut u8 {
     }
 }
 
-pub fn get_phys_mem_ptr<T>(phys_addr: PhysAddr) -> *const T {
-    get_phys_mem_base().wrapping_offset(phys_addr.as_u64() as isize) as *const T
+#[derive(Debug)]
+pub struct PhysMemPtr<T: ?Sized>(*mut T);
+
+impl<T: ?Sized> PhysMemPtr<T> {
+    pub fn ptr(&self) -> *mut T {
+        self.0
+    }
+
+    pub fn phys_addr(&self) -> PhysAddr {
+        PhysAddr::new(self.0 as *const () as u64 - get_phys_mem_base() as u64)
+    }
+
+    pub fn into_raw(self) -> *mut T {
+        self.0
+    }
+
+    pub unsafe fn from_raw(ptr: *mut T) -> Self {
+        PhysMemPtr(ptr)
+    }
 }
 
-pub fn get_phys_mem_ptr_mut<T>(phys_addr: PhysAddr) -> *mut T {
-    get_phys_mem_ptr::<T>(phys_addr) as *mut T
+pub fn get_phys_mem_ptr<T>(phys_addr: PhysAddr) -> PhysMemPtr<T> {
+    PhysMemPtr(get_phys_mem_base().wrapping_offset(phys_addr.as_u64() as isize) as *mut T)
 }
 
-pub unsafe fn get_phys_mem_addr<T>(ptr: *const T) -> PhysAddr {
-    PhysAddr::new((ptr as *mut u8).offset_from(get_phys_mem_base()) as u64)
+pub fn get_phys_mem_ptr_slice<T>(phys_addr: PhysAddr, len: usize) -> PhysMemPtr<[T]> {
+    PhysMemPtr(ptr::slice_from_raw_parts_mut(get_phys_mem_ptr::<T>(phys_addr).ptr(), len))
 }
 
 struct PhysPageTableFrameMapping;
 
 unsafe impl PageTableFrameMapping for PhysPageTableFrameMapping {
     fn frame_to_pointer(&self, frame: PhysFrame) -> *mut PageTable {
-        get_phys_mem_ptr_mut(frame.start_address()) as *mut PageTable
+        get_phys_mem_ptr(frame.start_address()).ptr()
     }
 }
 
@@ -137,7 +155,7 @@ impl AddressSpace {
                     }
                 } else if level > 1 && !entry.flags().contains(PageTableFlags::HUGE_PAGE) {
                     find_free_regions_in(
-                        unsafe { &*get_phys_mem_ptr(entry.frame().unwrap().start_address()) },
+                        unsafe { &*get_phys_mem_ptr(entry.frame().unwrap().start_address()).ptr() },
                         0..512,
                         start_addr,
                         level - 1,
@@ -148,7 +166,7 @@ impl AddressSpace {
         }
 
         find_free_regions_in(
-            &*get_phys_mem_ptr(self.page_table),
+            &*get_phys_mem_ptr(self.page_table).ptr(),
             256..511,
             VirtAddr::new(0xffff800000000000),
             4,
@@ -163,7 +181,7 @@ impl AddressSpace {
     fn as_page_table(&mut self) -> MappedPageTable<impl PageTableFrameMapping> {
         unsafe {
             MappedPageTable::new(
-                &mut *(get_phys_mem_ptr_mut(self.page_table) as *mut PageTable),
+                &mut *(get_phys_mem_ptr(self.page_table).ptr() as *mut PageTable),
                 PhysPageTableFrameMapping
             )
         }
@@ -200,7 +218,11 @@ pub(super) unsafe fn init_kernel_addrspace() {
             let i = PageTableIndex::new(i);
             if kl4_table.level_4_table()[i].is_unused() {
                 let kl3_table = frame_alloc.alloc_one().unwrap();
-                ptr::write_bytes(get_phys_mem_ptr_mut(kl3_table) as *mut u8, 0, PAGE_SIZE);
+                ptr::write_bytes(
+                    get_phys_mem_ptr_slice(kl3_table, PAGE_SIZE).ptr().get_unchecked_mut(0) as *mut u8,
+                    0,
+                    PAGE_SIZE
+                );
 
                 kl4_table.level_4_table()[i].set_addr(kl3_table, PageTableFlags::PRESENT | PageTableFlags::WRITABLE);
             };

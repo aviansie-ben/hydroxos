@@ -3,7 +3,9 @@
 use core::cmp::Ordering;
 use core::{mem, ptr};
 
-use crate::arch::page::{get_phys_mem_addr, get_phys_mem_ptr_mut, PAGE_SIZE};
+use static_assertions::const_assert;
+
+use crate::arch::page::{get_phys_mem_ptr, PhysMemPtr, IS_PHYS_MEM_ALWAYS_MAPPED, PAGE_SIZE};
 use crate::arch::VirtAddr;
 use crate::frame_alloc;
 use crate::frame_alloc::FrameAllocator;
@@ -93,10 +95,14 @@ impl VirtualAllocPage {
     const SPLIT_SECOND_SIZE: usize = VirtualAllocPage::REGIONS_PER_PAGE - VirtualAllocPage::SPLIT_POINT;
 
     fn new() -> *mut VirtualAllocPage {
-        let ptr = get_phys_mem_ptr_mut(frame_alloc::get_allocator().alloc_one().expect("Out of physical memory"));
+        // TODO This currently relies on the fact that get_phys_mem_ptr does not require any
+        //      virtual allocations to work, i.e. all of physical memory is mapped at all times
+        const_assert!(IS_PHYS_MEM_ALWAYS_MAPPED);
+
+        let ptr = get_phys_mem_ptr(frame_alloc::get_allocator().alloc_one().expect("Out of physical memory"));
 
         unsafe {
-            *ptr = VirtualAllocPage {
+            *ptr.ptr() = VirtualAllocPage {
                 header: VirtualAllocPageHeader {
                     prev: ptr::null_mut(),
                     next: ptr::null_mut(),
@@ -106,11 +112,12 @@ impl VirtualAllocPage {
             };
         }
 
-        ptr
+        ptr.into_raw()
     }
 
     unsafe fn free(ptr: *mut VirtualAllocPage) {
-        frame_alloc::get_allocator().free_one(get_phys_mem_addr(ptr));
+        let ptr = PhysMemPtr::from_raw(ptr);
+        frame_alloc::get_allocator().free_one(ptr.phys_addr());
     }
 
     fn range(&self) -> Option<VirtualAllocRegion> {

@@ -29,5 +29,6 @@ itertools = { version = "0.10.5", default-features = false, features = ["use_all
 lock_api = "0.4.12"
 ps2 = "0.2.0"
 spin = "0.9.8"
+static_assertions = "1.1.0"
 uart_16550 = "0.2.19"
 x86_64 = "0.14.12"

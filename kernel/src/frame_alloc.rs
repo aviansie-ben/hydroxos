@@ -5,7 +5,7 @@ use core::mem::MaybeUninit;
 use bootloader::bootinfo::MemoryRegionType;
 use bootloader::BootInfo;
 
-use crate::arch::page::{get_phys_mem_addr, get_phys_mem_ptr_mut, PAGE_SIZE};
+use crate::arch::page::{get_phys_mem_ptr, PhysMemPtr, PAGE_SIZE};
 use crate::arch::PhysAddr;
 use crate::sync::uninterruptible::{UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
 use crate::util::SharedUnsafeCell;
@@ -77,7 +77,7 @@ struct StackFrameAllocatorPage {
 /// A page frame allocator that maintains an internal stack of free frames.
 pub struct StackFrameAllocator {
     num_frames_available: usize,
-    stack_top: *mut StackFrameAllocatorPage
+    stack_top: Option<PhysMemPtr<StackFrameAllocatorPage>>
 }
 
 impl StackFrameAllocator {
@@ -85,7 +85,7 @@ impl StackFrameAllocator {
     pub const fn new() -> StackFrameAllocator {
         StackFrameAllocator {
             num_frames_available: 0,
-            stack_top: core::ptr::null_mut()
+            stack_top: None
         }
     }
 
@@ -105,18 +105,18 @@ impl StackFrameAllocator {
 impl FrameAllocator for StackFrameAllocator {
     unsafe fn free_one(&mut self, frame: PhysAddr) {
         if self.num_frames_available == 0 {
-            self.stack_top = get_phys_mem_ptr_mut(frame) as *mut StackFrameAllocatorPage;
-            (*self.stack_top).frames[0] = PhysAddr::zero();
+            self.stack_top = Some(get_phys_mem_ptr(frame));
+            (*self.stack_top.as_ref().unwrap().ptr()).frames[0] = PhysAddr::zero();
         } else {
             let i = self.frames_on_top_stack_frame();
 
             if i == NUM_FRAMES_PER_PAGE {
-                let new_stack_top = get_phys_mem_ptr_mut(frame) as *mut StackFrameAllocatorPage;
+                let new_stack_top = get_phys_mem_ptr::<StackFrameAllocatorPage>(frame);
 
-                (*new_stack_top).frames[0] = get_phys_mem_addr(self.stack_top);
-                self.stack_top = new_stack_top;
+                (*new_stack_top.ptr()).frames[0] = self.stack_top.as_ref().unwrap().phys_addr();
+                self.stack_top = Some(new_stack_top);
             } else {
-                (*self.stack_top).frames[i] = frame;
+                (*self.stack_top.as_ref().unwrap().ptr()).frames[i] = frame;
             };
         };
 
@@ -130,16 +130,16 @@ impl FrameAllocator for StackFrameAllocator {
             } else {
                 let i = self.frames_on_top_stack_frame();
                 let result = if i == 1 {
-                    let old_stack_top = self.stack_top;
+                    let old_stack_top = self.stack_top.take();
 
                     self.stack_top = if self.num_frames_available == 1 {
-                        core::ptr::null_mut()
+                        None
                     } else {
-                        get_phys_mem_ptr_mut((*self.stack_top).frames[0])
+                        Some(get_phys_mem_ptr((*self.stack_top.as_ref().unwrap().ptr()).frames[0]))
                     };
-                    get_phys_mem_addr(old_stack_top)
+                    old_stack_top.unwrap().phys_addr()
                 } else {
-                    (*self.stack_top).frames[i - 1]
+                    (*self.stack_top.as_ref().unwrap().ptr()).frames[i - 1]
                 };
 
                 self.num_frames_available -= 1;
@@ -248,7 +248,7 @@ mod tests {
     use core::mem::MaybeUninit;
 
     use super::{FrameAllocator, StackFrameAllocator, NUM_FRAMES_PER_PAGE};
-    use crate::arch::page::{get_phys_mem_ptr_mut, PAGE_SIZE};
+    use crate::arch::page::{get_phys_mem_ptr, PAGE_SIZE};
     use crate::arch::PhysAddr;
     use crate::util::PageAligned;
 
@@ -261,7 +261,7 @@ mod tests {
 
         use crate::arch::x86_64::page::get_phys_mem_base;
 
-        let addr = get_phys_mem_ptr_mut(x86_64::registers::control::Cr3::read().0.start_address());
+        let addr = get_phys_mem_ptr(x86_64::registers::control::Cr3::read().0.start_address()).ptr();
         let table = OffsetPageTable::new(&mut *addr, VirtAddr::new(get_phys_mem_base() as u64));
 
         match table.translate(VirtAddr::new(TEST_AREA[idx].as_ptr() as u64)) {
@@ -342,15 +342,21 @@ mod tests {
             allocator.free_one(get_test_page(1));
 
             assert_eq!(allocator.num_frames_available(), NUM_FRAMES_PER_PAGE + 2);
-            assert_eq!(get_phys_mem_ptr_mut(get_test_page(1)), allocator.stack_top);
-            assert_eq!(get_test_page(0), (*allocator.stack_top).frames[0]);
-            assert_eq!(get_test_page(1), (*allocator.stack_top).frames[1]);
+            assert_eq!(
+                get_test_page(1),
+                allocator.stack_top.as_ref().unwrap().phys_addr()
+            );
+            assert_eq!(get_test_page(0), (*allocator.stack_top.as_ref().unwrap().ptr()).frames[0]);
+            assert_eq!(get_test_page(1), (*allocator.stack_top.as_ref().unwrap().ptr()).frames[1]);
 
             assert_eq!(Some(get_test_page(1)), allocator.alloc_one());
             assert_eq!(Some(get_test_page(1)), allocator.alloc_one());
 
             assert_eq!(allocator.num_frames_available(), NUM_FRAMES_PER_PAGE);
-            assert_eq!(get_phys_mem_ptr_mut(get_test_page(0)), allocator.stack_top);
+            assert_eq!(
+                get_test_page(0),
+                allocator.stack_top.as_ref().unwrap().phys_addr()
+            );
         }
     }
 }
