@@ -112,6 +112,9 @@ impl Drop for InterruptDisabler {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpinlockTrackingDisabledError;
+
 cfg_if::cfg_if! {
     if #[cfg(feature = "spinlock_tracking")] {
         mod tracking {
@@ -120,7 +123,7 @@ cfg_if::cfg_if! {
 
             use itertools::Itertools;
 
-            use super::RawSpinlock;
+            use super::{RawSpinlock, SpinlockTrackingDisabledError};
 
             const MAX_HELD_LOCKS: usize = 64;
 
@@ -130,8 +133,8 @@ cfg_if::cfg_if! {
             #[thread_local]
             static HELD_LOCKS_LEN: Cell<usize> = Cell::new(0);
 
-            pub unsafe fn held_spinlocks() -> &'static [*const RawSpinlock] {
-                unsafe { &(*HELD_LOCKS.get())[..HELD_LOCKS_LEN.get()] }
+            pub unsafe fn held_spinlocks() -> Result<&'static [*const RawSpinlock], SpinlockTrackingDisabledError> {
+                Ok(unsafe { &(*HELD_LOCKS.get())[..HELD_LOCKS_LEN.get()] })
             }
 
             pub fn check_spinlock_for_deadlock(lock: *const RawSpinlock) {
@@ -164,9 +167,11 @@ cfg_if::cfg_if! {
         }
     } else {
         mod tracking {
-            static EMPTY_HELD: [*const RawSpinlock; 0] = [];
+            use super::SpinlockTrackingDisabledError;
 
-            pub unsafe fn held_spinlocks() -> &'static [*const RawSpinlock] { &EMPTY_HELD[..] }
+            pub unsafe fn held_spinlocks() -> Result<&'static [*const RawSpinlock], SpinlockTrackingDisabledError> {
+                Err(SpinlockTrackingDisabledError)
+            }
             pub fn check_spinlock_for_deadlock(_: *const RawSpinlock) {}
             pub fn push_spinlock(_: *const RawSpinlock) {}
             pub fn pop_spinlock(_: *const RawSpinlock) {}
@@ -189,17 +194,43 @@ impl RawSpinlock {
 
     /// Gets a list of spinlocks held by the current CPU core for debugging purposes.
     ///
-    /// This method may not always return the expected spinlocks, as it is possible to compile
-    /// without support for spinlock tracking. This method should **never** be relied on for
-    /// correctness and is provided only for debugging purposes.
+    /// In the event that the kernel has been compiled with spinlock tracking disabled, this
+    /// method will return `Err(SpinlockTrackingDisabledError)`. Therefore, this method should
+    /// **never** be relied on for correctness and is provided only for debugging purposes.
     ///
     /// # Safety
     ///
     /// The returned slice is valid only as long as [`RawSpinlockGuard`] is dropped which was live
     /// at the time this method was called. It is, however, acceptable to lock new spinlocks and
     /// drop their guards between calling this method and reading the returned slice.
-    pub unsafe fn held() -> &'static [*const RawSpinlock] {
+    pub unsafe fn held() -> Result<&'static [*const RawSpinlock], SpinlockTrackingDisabledError> {
         tracking::held_spinlocks()
+    }
+
+    /// Unlocks all spinlocks held by the current CPU core.
+    ///
+    /// In the event that the kernel has been compiled with spinlock tracking disabled, this
+    /// method will return `Err(SpinlockTrackingDisabledError)` and no spinlocks will be unlocked.
+    ///
+    /// # Safety
+    ///
+    /// This method is **incredibly** dangerous and is provided only for the purposes of
+    /// post-mortem debugging after a kernel panic. Once it has been called, all safety guarantees
+    /// with regards to spinlocks will no longer necessarily apply and the system cannot resume
+    /// normal operation.
+    ///
+    /// This method should only be called when the system is to be considered well and truly dead
+    /// and data structures that may have been locked will need to be introspected for debugging
+    /// purposes. Once it has been called, control should never be returned to any code that may
+    /// have held a spinlock at the time it was called. It should be noted that safety invariants
+    /// of other code may also be impacted in unexpected ways by doing this since data structures
+    /// may be left in a half-modified state.
+    pub unsafe fn force_unlock_held() -> Result<(), SpinlockTrackingDisabledError> {
+        while let &[.., held_spinlock] = Self::held()? {
+            (*held_spinlock).force_unlock();
+        }
+
+        Ok(())
     }
 
     /// Locks this spinlock and returns a guard that will automatically unlock it when dropped.
@@ -591,7 +622,7 @@ mod test {
                 let lock3 = UninterruptibleSpinlock::new(());
 
                 assert_eq!(
-                    &[] as &[*const RawSpinlock],
+                    Ok(&[] as &[*const RawSpinlock]),
                     unsafe { super::tracking::held_spinlocks() }
                 );
 
@@ -600,37 +631,37 @@ mod test {
                 let lock3_guard = lock3.lock();
 
                 assert_eq!(
-                    &[
+                    Ok(&[
                         lock1.raw() as *const _,
                         lock2.raw() as *const _,
                         lock3.raw() as *const _
-                    ],
+                    ] as &[*const RawSpinlock]),
                     unsafe { super::tracking::held_spinlocks() }
                 );
 
                 drop(lock2_guard);
 
                 assert_eq!(
-                    &[
+                    Ok(&[
                         lock1.raw() as *const _,
                         lock3.raw() as *const _
-                    ],
+                    ] as &[*const RawSpinlock]),
                     unsafe { super::tracking::held_spinlocks() }
                 );
 
                 drop(lock3_guard);
 
                 assert_eq!(
-                    &[
+                    Ok(&[
                         lock1.raw() as *const _
-                    ],
+                    ] as &[*const RawSpinlock]),
                     unsafe { super::tracking::held_spinlocks() }
                 );
 
                 drop(lock1_guard);
 
                 assert_eq!(
-                    &[] as &[*const RawSpinlock],
+                    Ok(&[] as &[*const RawSpinlock]),
                     unsafe { super::tracking::held_spinlocks() }
                 );
             } else {
