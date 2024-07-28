@@ -1,16 +1,19 @@
 use core::arch::asm;
 use core::mem;
 
-use crate::util::SharedUnsafeCell;
+use crate::util::OneShotManualInit;
 
 pub const XSAVE_AVX_SIZE: usize = 256;
 pub const XSAVE_MAX_EXTENDED_SIZE: usize = XSAVE_AVX_SIZE + 1024;
 
-static XSAVE_ENABLED: SharedUnsafeCell<bool> = SharedUnsafeCell::new(false);
-static XSAVE_AVX_OFFSET: SharedUnsafeCell<usize> = SharedUnsafeCell::new(!0);
+struct XSaveInfo {
+    avx_offset: Option<usize>
+}
+
+static XSAVE: OneShotManualInit<XSaveInfo> = OneShotManualInit::uninit();
 
 pub fn xsave_enabled() -> bool {
-    unsafe { *XSAVE_ENABLED.get() }
+    XSAVE.is_init()
 }
 
 #[repr(usize)]
@@ -151,23 +154,11 @@ impl XSaveExtendedArea {
     }
 
     fn ext_avx(&self) -> Option<&XSaveAvx> {
-        unsafe {
-            if *XSAVE_AVX_OFFSET.get() != !0 {
-                Some(mem::transmute(&self.0[*XSAVE_AVX_OFFSET.get()]))
-            } else {
-                None
-            }
-        }
+        XSAVE.get().avx_offset.map(|off| unsafe { mem::transmute(&self.0[off]) })
     }
 
     fn ext_avx_mut(&mut self) -> Option<&mut XSaveAvx> {
-        unsafe {
-            if *XSAVE_AVX_OFFSET.get() != !0 {
-                Some(mem::transmute(&mut self.0[*XSAVE_AVX_OFFSET.get()]))
-            } else {
-                None
-            }
-        }
+        XSAVE.get().avx_offset.map(|off| unsafe { mem::transmute(&mut self.0[off]) })
     }
 }
 
@@ -341,6 +332,7 @@ pub(super) unsafe fn init_xsave() {
     use super::cpuid::{self, CpuFeature};
 
     if cpuid::get_minimum_features().supports(CpuFeature::XSAVE) {
+        let mut xsave = XSaveInfo { avx_offset: None };
         Cr4::write(Cr4::read() | Cr4Flags::OSXSAVE);
 
         let mut current_offset = 0;
@@ -349,7 +341,7 @@ pub(super) unsafe fn init_xsave() {
 
         if cpuid::get_minimum_features().supports(CpuFeature::AVX) {
             xsave_feature_set_lo |= 0x00000004;
-            *XSAVE_AVX_OFFSET.get() = current_offset;
+            xsave.avx_offset = Some(current_offset);
             current_offset += XSAVE_AVX_SIZE;
         };
 
@@ -362,7 +354,7 @@ pub(super) unsafe fn init_xsave() {
             in("edx") xsave_feature_set_hi
         );
 
-        *XSAVE_ENABLED.get() = true;
+        XSAVE.set(xsave);
     } else {
         assert!(!cpuid::get_minimum_features().supports(CpuFeature::AVX));
     };

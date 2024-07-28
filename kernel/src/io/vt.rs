@@ -14,7 +14,7 @@ use crate::io::dev::{device_root, DeviceRef};
 use crate::io::tty::Tty;
 use crate::sync::uninterruptible::UninterruptibleSpinlockGuard;
 use crate::sync::{Future, UninterruptibleSpinlock};
-use crate::util::SharedUnsafeCell;
+use crate::util::OneShotManualInit;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VTChar {
@@ -396,12 +396,10 @@ impl Device for VirtualTerminalManager {
     }
 }
 
-static VT_MANAGER: SharedUnsafeCell<Option<DeviceRef<VirtualTerminalManager>>> = SharedUnsafeCell::new(None);
+static VT_MANAGER: OneShotManualInit<DeviceRef<VirtualTerminalManager>> = OneShotManualInit::uninit();
 
 pub unsafe fn init(primary_display: DeviceRef<dyn TerminalDisplay>) {
-    assert!((*VT_MANAGER.get()).is_none());
-
-    *VT_MANAGER.get() = Some(
+    VT_MANAGER.set(
         device_root()
             .dev()
             .add_device(DeviceNode::new(Box::from("vtmgr"), VirtualTerminalManager::new(primary_display)))
@@ -409,5 +407,5 @@ pub unsafe fn init(primary_display: DeviceRef<dyn TerminalDisplay>) {
 }
 
 pub fn get_global_manager() -> &'static DeviceRef<VirtualTerminalManager> {
-    unsafe { (*VT_MANAGER.get()).as_ref().unwrap() }
+    VT_MANAGER.get()
 }

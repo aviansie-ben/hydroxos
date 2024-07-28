@@ -10,7 +10,7 @@ use super::regs::{GeneralRegister, SavedBasicRegisters};
 use crate::log;
 use crate::sync::uninterruptible::InterruptDisabler;
 use crate::sync::UninterruptibleSpinlock;
-use crate::util::SharedUnsafeCell;
+use crate::util::OneShotManualInit;
 
 macro_rules! handler_with_code {
     ($name:ident, $n:expr) => {
@@ -456,7 +456,7 @@ impl InterruptTable {
     }
 }
 
-static IDT: SharedUnsafeCell<InterruptTable> = SharedUnsafeCell::new(InterruptTable::new());
+static IDT: OneShotManualInit<InterruptTable> = OneShotManualInit::uninit();
 
 pub unsafe fn register_irq(n: usize, handler: InterruptHandler) {
     let mut handlers = IRQ_HANDLERS.lock();
@@ -473,7 +473,7 @@ pub unsafe fn unregister_irq(n: usize) {
 }
 
 pub(super) unsafe fn init_bsp() {
-    let idt = IDT.get().as_mut().unwrap();
+    let mut idt = InterruptTable::new();
     let handlers = [
         begin_isr0,
         begin_isr1,
@@ -541,6 +541,8 @@ pub(super) unsafe fn init_bsp() {
         0,
         Some(begin_int80)
     );
+
+    let idt = IDT.set(idt);
 
     lidt(&idt.pointer());
 }

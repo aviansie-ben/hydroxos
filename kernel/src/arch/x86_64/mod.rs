@@ -7,7 +7,7 @@ pub use x86_64::{PhysAddr, VirtAddr};
 
 use crate::arch::dev::vgabuf::VgaTextBufferDevice;
 use crate::io::dev::DeviceNode;
-use crate::util::SharedUnsafeCell;
+use crate::util::OneShotManualInit;
 
 pub mod cpuid;
 pub mod dev;
@@ -17,7 +17,7 @@ pub mod page;
 pub mod pic;
 pub mod regs;
 
-static KERNEL_FS_BASE: SharedUnsafeCell<u64> = SharedUnsafeCell::new(0);
+static KERNEL_FS_BASE: OneShotManualInit<u64> = OneShotManualInit::uninit();
 
 unsafe fn init_sse() {
     use x86_64::registers::control::{Cr0, Cr0Flags, Cr4, Cr4Flags};
@@ -40,7 +40,7 @@ unsafe fn init_bootstrap_tls(boot_info: &BootInfo) {
         ptr::write::<*mut u8>(tib as *mut *mut u8, tib as *mut u8);
 
         x86_64::registers::model_specific::Msr::new(0xc0000100).write(tib as u64);
-        *KERNEL_FS_BASE.get() = tib as u64;
+        KERNEL_FS_BASE.set(tib as u64);
     };
 }
 

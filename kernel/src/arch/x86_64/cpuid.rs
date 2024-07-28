@@ -1,6 +1,6 @@
 use core::arch::asm;
 
-use crate::util::SharedUnsafeCell;
+use crate::util::OneShotManualInit;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CpuFeature {
@@ -59,12 +59,12 @@ impl CpuFeatureSet {
     }
 }
 
-static MIN_FEATURES: SharedUnsafeCell<CpuFeatureSet> = SharedUnsafeCell::new(CpuFeatureSet::empty());
+static MIN_FEATURES: OneShotManualInit<CpuFeatureSet> = OneShotManualInit::uninit();
 
-pub(super) unsafe fn init_bsp() {
-    *MIN_FEATURES.get() = CpuFeatureSet::detect();
+pub(super) fn init_bsp() {
+    MIN_FEATURES.set(CpuFeatureSet::detect());
 }
 
 pub fn get_minimum_features() -> &'static CpuFeatureSet {
-    unsafe { &*MIN_FEATURES.get() }
+    MIN_FEATURES.get()
 }

@@ -1,5 +1,4 @@
 use core::fmt::Write;
-use core::mem::MaybeUninit;
 use core::panic::PanicInfo;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
@@ -12,17 +11,11 @@ use crate::sched::is_handling_interrupt;
 use crate::sched::task::{Process, Thread};
 use crate::sync::uninterruptible::InterruptDisabler;
 use crate::sync::Future;
-use crate::util::SharedUnsafeCell;
+use crate::util::OneShotManualInit;
 
 pub const TEST_THREAD_STACK_SIZE: usize = 16 * 4096;
 
-pub static TEST_SERIAL_INITIALIZED: AtomicBool = AtomicBool::new(false);
-pub static TEST_SERIAL: SharedUnsafeCell<MaybeUninit<DeviceRef<dyn Tty>>> = SharedUnsafeCell::new(MaybeUninit::uninit());
-
-fn get_test_serial() -> &'static DeviceRef<dyn Tty> {
-    assert!(TEST_SERIAL_INITIALIZED.load(Ordering::Acquire));
-    unsafe { (*TEST_SERIAL.get()).assume_init_ref() }
-}
+pub static TEST_SERIAL: OneShotManualInit<DeviceRef<dyn Tty>> = OneShotManualInit::uninit();
 
 static TEST_LOG_PRINTED_NEWLINE: AtomicBool = AtomicBool::new(false);
 static IS_SKIPPED: AtomicBool = AtomicBool::new(false);
@@ -38,7 +31,7 @@ impl Tty for TestLogTty {
     unsafe fn write(&self, bytes: *const [u8]) -> Future<Result<(), ()>> {
         Future::done(
             try {
-                let serial = get_test_serial();
+                let serial = TEST_SERIAL.get();
                 if IS_TESTING.load(Ordering::Relaxed) && !TEST_LOG_PRINTED_NEWLINE.swap(true, Ordering::Relaxed) {
                     serial.dev().write_blocking(b"\n")?;
                 }
@@ -67,7 +60,7 @@ pub trait Test: Sync {
 
 impl<T: Fn() + Sync> Test for T {
     fn run(&self) {
-        let mut serial = TtyWriter::new(get_test_serial().dev());
+        let mut serial = TtyWriter::new(TEST_SERIAL.get().dev());
 
         write!(serial, "test {} ... ", core::any::type_name::<T>()).unwrap();
         TEST_LOG_PRINTED_NEWLINE.store(false, Ordering::Relaxed);
@@ -88,23 +81,17 @@ pub fn init_test_log() {
     use crate::io::dev;
     use crate::log;
 
-    assert!(!TEST_SERIAL_INITIALIZED.load(Ordering::Acquire));
+    let serial = dev::get_device_by_name("::serial0").expect("missing test serial port");
+    let serial = dyn_dyn_cast!(move Device => Tty, serial).expect("test serial is not a tty");
 
-    unsafe {
-        let serial = dev::get_device_by_name("::serial0").expect("missing test serial port");
-        let serial = dyn_dyn_cast!(move Device => Tty, serial).expect("test serial is not a tty");
-
-        log::remove_tty(&serial);
-        (*TEST_SERIAL.get()).write(serial);
-    }
-
-    TEST_SERIAL_INITIALIZED.store(true, Ordering::Release);
+    log::remove_tty(&serial);
+    TEST_SERIAL.set(serial);
 
     log::init(device_root().dev().add_device(DeviceNode::new(Box::from("testlog"), TestLogTty)));
 }
 
 pub fn run_tests(tests: &'static [&dyn Test]) -> ! {
-    let mut serial = TtyWriter::new(get_test_serial().dev());
+    let mut serial = TtyWriter::new(TEST_SERIAL.get().dev());
 
     writeln!(serial, "Running {} tests...", tests.len()).unwrap();
 
@@ -139,7 +126,7 @@ pub fn run_tests_thread(tests: &[&dyn Test]) {
 }
 
 pub fn skip(reason: &str) {
-    let mut serial = TtyWriter::new(get_test_serial().dev());
+    let mut serial = TtyWriter::new(TEST_SERIAL.get().dev());
 
     writeln!(serial, "skipped ({})", reason).unwrap();
     IS_SKIPPED.store(true, Ordering::Relaxed);
@@ -158,7 +145,7 @@ pub fn exit(_code: u32) -> ! {
 }
 
 pub fn handle_test_panic(info: &PanicInfo) -> ! {
-    let mut serial = TtyWriter::new(get_test_serial().dev());
+    let mut serial = TtyWriter::new(TEST_SERIAL.get().dev());
     let is_testing = IS_TESTING.swap(false, Ordering::Relaxed);
 
     if is_testing {

@@ -16,7 +16,7 @@ use crate::io::dev::hub::{DeviceHub, DeviceHubExt, DeviceHubLockedError, Virtual
 use crate::log;
 use crate::sync::future::FutureWriter;
 use crate::sync::{Future, UninterruptibleSpinlock};
-use crate::util::SharedUnsafeCell;
+use crate::util::OneShotManualInit;
 
 pub mod hub;
 pub mod kbd;
@@ -232,19 +232,17 @@ impl<'a, T: ?Sized> fmt::Display for DeviceFullName<'a, T> {
     }
 }
 
-static DEVICE_ROOT: SharedUnsafeCell<Option<DeviceRef<VirtualDeviceHub>>> = SharedUnsafeCell::new(None);
+static DEVICE_ROOT: OneShotManualInit<DeviceRef<VirtualDeviceHub>> = OneShotManualInit::uninit();
 
 pub(crate) unsafe fn init_device_root() {
-    debug_assert!((*DEVICE_ROOT.get()).is_none());
-
     let device_root = DeviceRef::new(DeviceNode::new(Box::from("(root)"), VirtualDeviceHub::new()));
 
     device_root.dev.on_connected(&device_root);
-    *DEVICE_ROOT.get() = Some(device_root);
+    DEVICE_ROOT.set(device_root);
 }
 
 pub fn device_root() -> &'static DeviceRef<VirtualDeviceHub> {
-    unsafe { (*DEVICE_ROOT.get()).as_ref().unwrap() }
+    DEVICE_ROOT.get()
 }
 
 pub fn get_device_by_name(mut name: &str) -> Result<DeviceRef<dyn Device>, DeviceNotFoundError> {

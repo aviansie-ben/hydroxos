@@ -36,7 +36,7 @@ fn show_command_prompt() {
     use hydroxos_kernel::io::dev::{self, Device};
     use hydroxos_kernel::io::tty::Tty;
 
-    let vt = dyn_dyn_cast!(move Device => Tty, dev::get_device_by_name("::serial0").ok().unwrap()).unwrap();
+    let vt = dyn_dyn_cast!(move Device => Tty, dev::get_device_by_name("::vtmgr::vt0").ok().unwrap()).unwrap();
     show_debug_console(vt.dev());
 }
 

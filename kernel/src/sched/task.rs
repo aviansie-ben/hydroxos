@@ -18,11 +18,11 @@ use crate::arch::regs::SavedRegisters;
 use crate::sync::future::FutureWriter;
 use crate::sync::uninterruptible::{InterruptDisabler, UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
 use crate::sync::Future;
-use crate::util::{PinWeak, SharedUnsafeCell};
+use crate::util::{OneShotManualInit, PinWeak, SharedUnsafeCell};
 
 static NEXT_PID: AtomicU64 = AtomicU64::new(0);
 
-static KERNEL_PROCESS: SharedUnsafeCell<MaybeUninit<Pin<Arc<Process>>>> = SharedUnsafeCell::new(MaybeUninit::uninit());
+static KERNEL_PROCESS: OneShotManualInit<Pin<Arc<Process>>> = OneShotManualInit::uninit();
 
 struct ProcessInternal {
     next_thread_id: u64,
@@ -70,9 +70,7 @@ impl Process {
     /// This method must only be called once during startup from the bootstrap processor. This should be called early during the startup
     /// process, as calling [`Process::kernel`] is technically unsafe until this method is called.
     pub(super) unsafe fn init_kernel_process() {
-        debug_assert!(!Process::is_initialized());
-
-        ptr::write((*KERNEL_PROCESS.get()).as_mut_ptr(), Process::create_internal(0, None));
+        KERNEL_PROCESS.set(Process::create_internal(0, None));
         NEXT_PID.store(1, Ordering::Relaxed);
 
         let init_thread = Thread::create_internal(&mut Process::kernel().lock(), SavedRegisters::new());
@@ -82,17 +80,12 @@ impl Process {
 
     /// Checks whether kernel process initialization has been completed by calling [`Process::init_kernel_process`].
     pub(super) fn is_initialized() -> bool {
-        NEXT_PID.load(Ordering::Relaxed) > 0
+        KERNEL_PROCESS.is_init()
     }
 
     /// Gets a reference to the kernel process.
     pub fn kernel() -> &'static Pin<Arc<Process>> {
-        // SAFETY: KERNEL_PROCESS is only set once during initialization, so it is safe to get shared references to it once initialization
-        //         is complete.
-        unsafe {
-            debug_assert!(Process::is_initialized());
-            &*(*KERNEL_PROCESS.get()).as_ptr()
-        }
+        KERNEL_PROCESS.get()
     }
 
     /// Gets this process's PID.

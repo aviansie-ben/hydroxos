@@ -8,7 +8,7 @@ use bootloader::BootInfo;
 use crate::arch::page::{get_phys_mem_ptr, PhysMemPtr, PAGE_SIZE};
 use crate::arch::PhysAddr;
 use crate::sync::uninterruptible::{UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
-use crate::util::SharedUnsafeCell;
+use crate::util::OneShotManualInit;
 
 const NUM_FRAMES_PER_PAGE: usize = PAGE_SIZE / core::mem::size_of::<PhysAddr>();
 
@@ -218,7 +218,7 @@ fn is_usable(region_ty: MemoryRegionType) -> bool {
     }
 }
 
-static NUM_TOTAL_FRAMES: SharedUnsafeCell<usize> = SharedUnsafeCell::new(0);
+static NUM_TOTAL_FRAMES: OneShotManualInit<usize> = OneShotManualInit::uninit();
 
 pub(crate) unsafe fn init(boot_info: &BootInfo) {
     let mut num_frames = 0;
@@ -236,11 +236,11 @@ pub(crate) unsafe fn init(boot_info: &BootInfo) {
         };
     }
 
-    *NUM_TOTAL_FRAMES.get() = usize::try_from(num_frames).expect("Too many frames to fit in usize");
+    NUM_TOTAL_FRAMES.set(usize::try_from(num_frames).expect("Too many frames to fit in usize"));
 }
 
 pub fn num_total_frames() -> usize {
-    unsafe { *NUM_TOTAL_FRAMES.get() }
+    *NUM_TOTAL_FRAMES.get()
 }
 
 #[cfg(test)]
@@ -342,10 +342,7 @@ mod tests {
             allocator.free_one(get_test_page(1));
 
             assert_eq!(allocator.num_frames_available(), NUM_FRAMES_PER_PAGE + 2);
-            assert_eq!(
-                get_test_page(1),
-                allocator.stack_top.as_ref().unwrap().phys_addr()
-            );
+            assert_eq!(get_test_page(1), allocator.stack_top.as_ref().unwrap().phys_addr());
             assert_eq!(get_test_page(0), (*allocator.stack_top.as_ref().unwrap().ptr()).frames[0]);
             assert_eq!(get_test_page(1), (*allocator.stack_top.as_ref().unwrap().ptr()).frames[1]);
 
@@ -353,10 +350,7 @@ mod tests {
             assert_eq!(Some(get_test_page(1)), allocator.alloc_one());
 
             assert_eq!(allocator.num_frames_available(), NUM_FRAMES_PER_PAGE);
-            assert_eq!(
-                get_test_page(0),
-                allocator.stack_top.as_ref().unwrap().phys_addr()
-            );
+            assert_eq!(get_test_page(0), allocator.stack_top.as_ref().unwrap().phys_addr());
         }
     }
 }

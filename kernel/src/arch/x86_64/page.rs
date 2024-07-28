@@ -10,32 +10,21 @@ use x86_64::{PhysAddr, VirtAddr};
 use crate::frame_alloc::FrameAllocator;
 use crate::sync::uninterruptible::UninterruptibleSpinlockGuard;
 use crate::sync::UninterruptibleSpinlock;
-use crate::util::SharedUnsafeCell;
+use crate::util::OneShotManualInit;
 use crate::virtual_alloc::{VirtualAllocRegion, VirtualAllocator};
 
 pub const PAGE_SIZE: usize = 4096;
 pub const IS_PHYS_MEM_ALWAYS_MAPPED: bool = true;
 
-static PHYS_MEM_BASE: SharedUnsafeCell<*mut u8> = SharedUnsafeCell::new(ptr::null_mut());
-static KERNEL_ADDRESS_SPACE: SharedUnsafeCell<UninterruptibleSpinlock<AddressSpace>> =
-    SharedUnsafeCell::new(UninterruptibleSpinlock::new(unsafe {
-        AddressSpace::from_page_table(PhysAddr::zero())
-    }));
+static PHYS_MEM_BASE: OneShotManualInit<*mut u8> = OneShotManualInit::uninit();
+static KERNEL_ADDRESS_SPACE: OneShotManualInit<UninterruptibleSpinlock<AddressSpace>> = OneShotManualInit::uninit();
 
 pub fn init_phys_mem_base(phys_mem_base: *mut u8) {
-    unsafe {
-        assert_eq!(ptr::null_mut(), *PHYS_MEM_BASE.get());
-        *PHYS_MEM_BASE.get() = phys_mem_base;
-    };
+    PHYS_MEM_BASE.set(phys_mem_base);
 }
 
 pub fn get_phys_mem_base() -> *mut u8 {
-    unsafe {
-        let phys_mem_base = *PHYS_MEM_BASE.get();
-
-        assert_ne!(ptr::null_mut(), phys_mem_base);
-        phys_mem_base
-    }
+    *PHYS_MEM_BASE.get()
 }
 
 #[derive(Debug)]
@@ -102,12 +91,7 @@ impl AddressSpace {
     }
 
     pub fn kernel() -> UninterruptibleSpinlockGuard<'static, AddressSpace> {
-        unsafe {
-            let kernel_addrspace = (*KERNEL_ADDRESS_SPACE.get()).lock();
-
-            assert_ne!(kernel_addrspace.page_table, PhysAddr::zero());
-            kernel_addrspace
-        }
+        (*KERNEL_ADDRESS_SPACE.get()).lock()
     }
 
     pub fn new() -> AddressSpace {
@@ -193,10 +177,7 @@ pub(super) unsafe fn init_kernel_addrspace() {
         panic!("Kernel is loaded in lower-half?");
     };
 
-    let mut kernel_addrspace = (*KERNEL_ADDRESS_SPACE.get()).lock();
-    assert_eq!(kernel_addrspace.page_table, PhysAddr::zero());
-
-    *kernel_addrspace = AddressSpace::new_kernel();
+    let mut kernel_addrspace = AddressSpace::new_kernel();
     kernel_addrspace.init_kernel_virtual_alloc();
 
     let mut kl4_table = kernel_addrspace.as_page_table();
@@ -228,6 +209,7 @@ pub(super) unsafe fn init_kernel_addrspace() {
             };
         }
 
+        KERNEL_ADDRESS_SPACE.set(UninterruptibleSpinlock::new(kernel_addrspace));
         x86_64::instructions::tlb::flush_all();
     }
 }

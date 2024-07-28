@@ -4,6 +4,7 @@ use core::fmt;
 use core::mem::MaybeUninit;
 use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
+use core::sync::atomic::{AtomicU8, Ordering};
 
 #[repr(transparent)]
 #[derive(Debug)]
@@ -402,6 +403,81 @@ impl<'a, T, const N: usize> DoubleEndedIterator for ArrayDequeDrain<'a, T, N> {
 impl<'a, T, const N: usize> Drop for ArrayDequeDrain<'a, T, N> {
     fn drop(&mut self) {
         for _ in self {}
+    }
+}
+
+pub struct OneShotManualInit<T> {
+    // 0: Uninitialized
+    // 1: Initialization started, but not completed
+    // 2: Initialized
+    state: AtomicU8,
+    val: SharedUnsafeCell<MaybeUninit<T>>
+}
+
+impl<T> OneShotManualInit<T> {
+    pub const fn uninit() -> Self {
+        Self {
+            state: AtomicU8::new(0),
+            val: SharedUnsafeCell::new(MaybeUninit::uninit())
+        }
+    }
+
+    pub const fn new(val: T) -> Self {
+        Self {
+            state: AtomicU8::new(2),
+            val: SharedUnsafeCell::new(MaybeUninit::new(val))
+        }
+    }
+
+    pub fn is_init(&self) -> bool {
+        self.state.load(Ordering::Acquire) == 2
+    }
+
+    #[track_caller]
+    pub fn set(&self, val: T) -> &T {
+        if self.state.compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed).is_err() {
+            panic!("OneShotManualInit initialized multiple times");
+        }
+
+        // SAFETY: Since the state was previously 0, nobody else can have any references to val
+        //         from before the swap. And since we swap the state with 1, it is not possible for
+        //         any other concurrent call to set(...) to get to this point. Therefore, we have
+        //         the only reference to the internals of val at this point.
+        unsafe {
+            (*self.val.get()).write(val);
+        }
+
+        self.state.store(2, Ordering::Release);
+
+        // SAFETY: We literally just initialized this
+        unsafe { (*self.val.get()).assume_init_ref() }
+    }
+
+    pub fn try_get(&self) -> Option<&T> {
+        if self.is_init() {
+            // SAFETY: Since the state was seen to be 2 above, val must have been fully initialized
+            //         and so it is now safe to get a shared reference to it.
+            Some(unsafe { (*self.val.get()).assume_init_ref() })
+        } else {
+            None
+        }
+    }
+
+    #[track_caller]
+    pub fn get(&self) -> &T {
+        self.try_get().expect("OneShotManualInit used before being initialized")
+    }
+}
+
+impl<T> Drop for OneShotManualInit<T> {
+    fn drop(&mut self) {
+        if self.is_init() {
+            // SAFETY: Initialization was complete, so there's definitely a valid value to drop
+            //         here.
+            unsafe {
+                (*self.val.get()).assume_init_drop();
+            }
+        }
     }
 }
 
