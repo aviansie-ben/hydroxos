@@ -6,6 +6,7 @@ use core::ptr;
 use crate::io::ansi::AnsiColor;
 use crate::io::dev::DeviceRef;
 use crate::io::tty::Tty;
+use crate::sched::enqueue_soft_interrupt;
 use crate::sync::{Future, UninterruptibleSpinlock};
 
 static OUT_TTY: UninterruptibleSpinlock<Vec<DeviceRef<dyn Tty>>> = UninterruptibleSpinlock::new(vec![]);
@@ -55,11 +56,13 @@ pub fn remove_tty(out: &DeviceRef<dyn Tty>) {
 }
 
 pub fn log_msg(msg: String) {
-    Future::all(OUT_TTY.lock().iter().map(|tty| {
-        // SAFETY: Backing memory for msg is kept alive until all writes are completed by moving it into the when_resolved closure
-        unsafe { tty.dev().write(msg.as_bytes()).without_val() }
-    }))
-    .when_resolved(move |_| drop(msg))
+    enqueue_soft_interrupt(move || {
+        Future::all(OUT_TTY.lock().iter().map(|tty| {
+            // SAFETY: Backing memory for msg is kept alive until all writes are completed by moving it into the when_resolved closure
+            unsafe { tty.dev().write(msg.as_bytes()).without_val() }
+        }))
+        .when_resolved(move |_| drop(msg))
+    });
 }
 
 #[macro_export]
