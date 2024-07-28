@@ -1,7 +1,10 @@
 //! Data structures used by the scheduler to track processes and threads.
 
 use alloc::boxed::Box;
+use alloc::string::String;
 use alloc::sync::Arc;
+use alloc::vec;
+use alloc::vec::Vec;
 use core::arch::asm;
 use core::cell::UnsafeCell;
 use core::fmt;
@@ -21,8 +24,53 @@ use crate::sync::Future;
 use crate::util::{OneShotManualInit, PinWeak, SharedUnsafeCell};
 
 static NEXT_PID: AtomicU64 = AtomicU64::new(0);
-
 static KERNEL_PROCESS: OneShotManualInit<Pin<Arc<Process>>> = OneShotManualInit::uninit();
+
+/// The top-level list of processes on the machine
+#[non_exhaustive]
+pub struct ProcessList;
+
+impl ProcessList {
+    pub fn get(&self, pid: u64) -> Option<&Pin<Arc<Process>>> {
+        if pid == 0 {
+            Some(Process::kernel())
+        } else {
+            None
+        }
+    }
+
+    pub fn iter(&self) -> ProcessListIterator {
+        ProcessListIterator(self, false)
+    }
+}
+
+impl<'a> IntoIterator for &'a ProcessList {
+    type IntoIter = ProcessListIterator<'a>;
+    type Item = &'a Pin<Arc<Process>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+pub struct ProcessListIterator<'a>(#[allow(dead_code)] &'a ProcessList, bool);
+
+impl<'a> Iterator for ProcessListIterator<'a> {
+    type Item = &'a Pin<Arc<Process>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let ProcessListIterator(_, ref mut state) = *self;
+
+        if !*state {
+            *state = true;
+            Some(Process::kernel())
+        } else {
+            None
+        }
+    }
+}
+
+static PROCESS_LIST: UninterruptibleSpinlock<ProcessList> = UninterruptibleSpinlock::new(ProcessList {});
 
 struct ProcessInternal {
     next_thread_id: u64,
@@ -43,15 +91,17 @@ impl !Unpin for ProcessInternal {}
 /// ensure this.
 pub struct Process {
     pid: u64,
+    cmd: Vec<String>,
     internal: UninterruptibleSpinlock<ProcessInternal>
 }
 
 impl Process {
-    fn create_internal(pid: u64, addr_space: Option<AddressSpace>) -> Pin<Arc<Process>> {
+    fn create_internal(pid: u64, cmd: Vec<String>, addr_space: Option<AddressSpace>) -> Pin<Arc<Process>> {
         assert_eq!(pid == 0, addr_space.is_none());
 
         Arc::pin(Process {
             pid,
+            cmd,
             internal: UninterruptibleSpinlock::new(ProcessInternal {
                 next_thread_id: 0,
                 threads_head: None,
@@ -70,7 +120,7 @@ impl Process {
     /// This method must only be called once during startup from the bootstrap processor. This should be called early during the startup
     /// process, as calling [`Process::kernel`] is technically unsafe until this method is called.
     pub(super) unsafe fn init_kernel_process() {
-        KERNEL_PROCESS.set(Process::create_internal(0, None));
+        KERNEL_PROCESS.set(Process::create_internal(0, vec![String::from("(kernel)")], None));
         NEXT_PID.store(1, Ordering::Relaxed);
 
         let init_thread = Thread::create_internal(&mut Process::kernel().lock(), SavedRegisters::new());
@@ -88,9 +138,19 @@ impl Process {
         KERNEL_PROCESS.get()
     }
 
+    /// Gets a reference to the global list of processes.
+    pub fn list() -> UninterruptibleSpinlockGuard<'static, ProcessList> {
+        PROCESS_LIST.lock()
+    }
+
     /// Gets this process's PID.
     pub fn pid(&self) -> u64 {
         self.pid
+    }
+
+    /// Gets the command line with which this process was started.
+    pub fn cmd(&self) -> &[String] {
+        &self.cmd
     }
 
     /// Checks whether this process is the kernel process.

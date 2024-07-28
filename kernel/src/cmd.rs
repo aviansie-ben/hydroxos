@@ -4,6 +4,7 @@ use core::fmt::{self, Write};
 
 use crate::io::dev;
 use crate::io::tty::{Tty, TtyCharReader, TtyWriter};
+use crate::sched::task::Process;
 
 fn readline<T: Tty + ?Sized>(r: &mut TtyCharReader<T>, w: &mut TtyWriter<T>) -> Result<String, String> {
     let mut s = String::new();
@@ -68,9 +69,52 @@ fn run_dev_cmd<T: Tty + ?Sized>(w: &mut TtyWriter<T>, args: &[&str]) -> Result<(
         subcmd => {
             if let Some(&subcmd) = subcmd {
                 writeln!(w, "unknown dev subcommand '{}'", subcmd)?;
+            } else {
+                writeln!(w, "no subcommand provided")?;
             }
 
-            writeln!(w, "available subcommands are 'ls' and 'print'")?;
+            writeln!(w, "run 'help dev' for more information")?;
+        }
+    }
+
+    Ok(())
+}
+
+fn run_proc_cmd<T: Tty + ?Sized>(w: &mut TtyWriter<T>, args: &[&str]) -> Result<(), fmt::Error> {
+    match args.get(0) {
+        Some(&"ls") => {
+            for p in &*Process::list() {
+                writeln!(w, "{}: {}", p.pid(), p.cmd().get(0).map_or("???", |s| &*s))?;
+            }
+        },
+        Some(&"threads") => {
+            let pid = if let Some(pid) = args.get(1).and_then(|a| a.parse::<u64>().ok()) {
+                pid
+            } else {
+                writeln!(w, "usage: dev threads <pid>")?;
+                return Ok(());
+            };
+
+            let p = Process::list();
+            let p = if let Some(p) = p.get(pid) {
+                p
+            } else {
+                writeln!(w, "no process found with pid {}", pid)?;
+                return Ok(());
+            };
+
+            for t in p.lock().threads() {
+                writeln!(w, "{}: {:?}", t.thread_id(), t.lock().state())?;
+            }
+        },
+        subcmd => {
+            if let Some(&subcmd) = subcmd {
+                writeln!(w, "unknown proc subcommand '{}'", subcmd)?;
+            } else {
+                writeln!(w, "no subcommand provided")?;
+            }
+
+            writeln!(w, "run 'help proc' for more information")?;
         }
     }
 
@@ -81,6 +125,31 @@ fn run_debug_console_command<T: Tty + ?Sized>(w: &mut TtyWriter<T>, cmd: &[&str]
     match cmd[0] {
         "dev" => {
             run_dev_cmd(w, &cmd[1..])?;
+        },
+        "proc" => {
+            run_proc_cmd(w, &cmd[1..])?;
+        },
+        "help" => match cmd.get(1) {
+            None => {
+                writeln!(w, "available commands are:")?;
+                writeln!(w, "  dev - device information")?;
+                writeln!(w, "  proc - process information")?;
+                writeln!(w)?;
+                writeln!(w, "run 'help <cmd>' for more information")?;
+            },
+            Some(&"dev") => {
+                writeln!(w, "available subcommands are:")?;
+                writeln!(w, "  dev ls [dev] - list devices")?;
+                writeln!(w, "  dev print [dev] - print device")?;
+            },
+            Some(&"proc") => {
+                writeln!(w, "available subcommands are:")?;
+                writeln!(w, "  proc ls - list processes")?;
+                writeln!(w, "  proc threads <pid> - list threads in process")?;
+            },
+            Some(cmd) => {
+                writeln!(w, "unknown command '{}'", cmd)?;
+            }
         },
         _ => {
             writeln!(w, "unknown command '{}'", cmd[0])?;
