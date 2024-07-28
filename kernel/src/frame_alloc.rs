@@ -135,7 +135,7 @@ impl FrameAllocator for StackFrameAllocator {
                     self.stack_top = if self.num_frames_available == 1 {
                         None
                     } else {
-                        Some(get_phys_mem_ptr((*self.stack_top.as_ref().unwrap().ptr()).frames[0]))
+                        Some(get_phys_mem_ptr((*old_stack_top.as_ref().unwrap().ptr()).frames[0]))
                     };
                     old_stack_top.unwrap().phys_addr()
                 } else {
