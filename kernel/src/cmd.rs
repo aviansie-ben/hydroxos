@@ -5,26 +5,122 @@ use core::fmt::{self, Write};
 use crate::io::dev;
 use crate::io::tty::{Tty, TtyCharReader, TtyWriter};
 use crate::sched::task::Process;
+use crate::util::ArrayDeque;
 
-fn readline<T: Tty + ?Sized>(r: &mut TtyCharReader<T>, w: &mut TtyWriter<T>) -> Result<String, String> {
+struct CommandHistory {
+    buf: ArrayDeque<String, 64>
+}
+
+fn readline<T: Tty + ?Sized>(r: &mut TtyCharReader<T>, w: &mut TtyWriter<T>, history: &mut CommandHistory) -> Result<String, String> {
+    let mut history_pos = history.buf.len();
+    let mut history_modified = [const { None }; 65];
+
     let mut s = String::new();
+    let mut i = 0;
+
+    // TODO Implement line wrapping support
 
     loop {
         match r.next_char() {
             Ok('\n') => {
+                if i != s.len() {
+                    let _ = write!(w, "\x1b[{}C", s.len() - i);
+                }
+
+                if history.buf.is_full() {
+                    history.buf.pop_front();
+                }
+
+                assert!(history.buf.push_back(s.clone()).is_ok());
+
                 let _ = writeln!(w);
                 return Ok(s);
             },
             Ok('\x7f') => {
-                if s.pop().is_some() {
-                    let _ = write!(w, "\x08 \x08");
+                if i != 0 {
+                    s.remove(i - 1);
+                    i -= 1;
+
+                    let _ = write!(w, "\x1b[D");
+                    let _ = write!(w, "{}", &s[i..]);
+                    let _ = write!(w, " \x1b[{}D", s.len() - i + 1);
                 }
+            },
+            Ok('\x1b') => match r.next_char() {
+                Ok('[') => match r.next_char() {
+                    Ok('A') => {
+                        if history_pos != 0 {
+                            if !s.is_empty() {
+                                let _ = write!(w, "\x1b[{}D", i);
+                                let _ = write!(w, "\x1b[K");
+                            }
+
+                            history_modified[history_pos] = Some(s);
+                            history_pos -= 1;
+
+                            if let Some(modified) = history_modified[history_pos].take() {
+                                s = modified;
+                            } else {
+                                s = history.buf.get(history_pos).unwrap().clone();
+                            }
+
+                            i = s.len();
+                            let _ = write!(w, "{}", s);
+                        }
+                    },
+                    Ok('B') => {
+                        if history_pos != history.buf.len() {
+                            if !s.is_empty() {
+                                let _ = write!(w, "\x1b[{}D", i);
+                                let _ = write!(w, "\x1b[K");
+                            }
+
+                            history_modified[history_pos] = Some(s);
+                            history_pos += 1;
+
+                            if let Some(modified) = history_modified[history_pos].take() {
+                                s = modified;
+                            } else {
+                                s = history.buf.get(history_pos).unwrap().clone();
+                            }
+
+                            i = s.len();
+                            let _ = write!(w, "{}", s);
+                        }
+                    },
+                    Ok('C') => {
+                        if i != s.len() {
+                            let _ = write!(w, "\x1b[C");
+                            i += 1;
+                        }
+                    },
+                    Ok('D') => {
+                        if i != 0 {
+                            let _ = write!(w, "\x1b[D");
+                            i -= 1;
+                        }
+                    },
+                    _ => {}
+                },
+                _ => {}
             },
             Ok('\x00'..='\x1f') => {},
             Ok(ch) => {
                 let mut ch_bytes = [0_u8; 4];
-                let _ = write!(w, "{}", ch.encode_utf8(&mut ch_bytes));
-                s.push(ch);
+                let ch_str = ch.encode_utf8(&mut ch_bytes);
+
+                // TODO Add proper UTF-8 support
+                if ch_str.len() == 1 {
+                    let _ = write!(w, "{}", ch_str);
+
+                    if i != s.len() {
+                        let _ = write!(w, "{}", &s[i..]);
+                        let _ = write!(w, "\x1b[{}D", s.len() - i);
+                    }
+
+                    s.insert(i, ch);
+                    i += 1;
+                }
             },
             Err(_) => {
                 return Err(s);
@@ -199,9 +295,11 @@ pub fn show_debug_console<T: Tty + ?Sized>(tty: &T) {
     let mut r = TtyCharReader::new(tty);
     let mut w = TtyWriter::new(tty);
 
+    let mut history = CommandHistory { buf: ArrayDeque::new() };
+
     loop {
         let _ = write!(w, "hkd> ");
-        let cmd = readline(&mut r, &mut w);
+        let cmd = readline(&mut r, &mut w, &mut history);
 
         if let Ok(cmd) = cmd {
             match parse_command(&cmd) {

@@ -147,6 +147,19 @@ impl VirtualTerminalInternals {
             Some(AnsiParserAction::WriteChar(ch)) => {
                 self.write_char(ch);
             },
+            Some(AnsiParserAction::CursorUp(n)) => {
+                self.cursor_pos.1 = self.cursor_pos.1.saturating_sub(n as usize);
+            },
+            Some(AnsiParserAction::CursorDown(n)) => {
+                self.cursor_pos.1 = self.cursor_pos.1.saturating_add(n as usize).min(self.size.1 - 1);
+            },
+            Some(AnsiParserAction::CursorRight(n)) => self.cursor_pos.0 = self.cursor_pos.0.saturating_add(n as usize).min(self.size.0 - 1),
+            Some(AnsiParserAction::CursorLeft(n)) => {
+                self.cursor_pos.0 = self.cursor_pos.0.saturating_sub(n as usize);
+            },
+            Some(AnsiParserAction::EraseToLineEnd) => {
+                self.clear_range(self.off(self.cursor_pos.0, self.cursor_pos.1), self.off(0, self.cursor_pos.1 + 1));
+            },
             Some(AnsiParserAction::Sgr(sgr, sgr_len)) => {
                 for &sgr in sgr[0..sgr_len].iter() {
                     match sgr {

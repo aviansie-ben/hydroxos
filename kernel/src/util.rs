@@ -188,6 +188,10 @@ impl<T, const N: usize> ArrayDeque<T, N> {
         self.len == 0
     }
 
+    pub fn is_full(&self) -> bool {
+        self.len == N
+    }
+
     fn idx(head: usize, idx: usize) -> usize {
         if idx >= N - head {
             idx - (N - head)

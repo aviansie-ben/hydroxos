@@ -1,4 +1,4 @@
-use core::fmt;
+use core::{fmt, str};
 
 #[derive(Debug)]
 enum AnsiParserState {
@@ -95,6 +95,11 @@ impl fmt::Display for AnsiParserSgrAction {
 #[derive(Debug, Clone, Copy)]
 pub enum AnsiParserAction {
     WriteChar(char),
+    CursorUp(u32),
+    CursorDown(u32),
+    CursorRight(u32),
+    CursorLeft(u32),
+    EraseToLineEnd,
     Sgr([AnsiParserSgrAction; AnsiParser::MAX_SGR_CMDS], usize)
 }
 
@@ -154,6 +159,18 @@ fn parse_ansi_sgr(sgr: &[u8]) -> ([AnsiParserSgrAction; AnsiParser::MAX_SGR_CMDS
     }
 
     (actions, actions_len)
+}
+
+fn parse_ansi_number(val: &[u8]) -> Option<u32> {
+    str::from_utf8(val).ok().and_then(|n| n.parse::<u32>().ok())
+}
+
+fn parse_ansi_number_or(default: u32, val: &[u8]) -> Option<u32> {
+    if val.is_empty() {
+        Some(default)
+    } else {
+        parse_ansi_number(val)
+    }
 }
 
 impl AnsiParser {
@@ -238,6 +255,30 @@ impl AnsiParser {
 
                         let (sgr, sgr_len) = parse_ansi_sgr(&self.partial_buf[0..i]);
                         Some(AnsiParserAction::Sgr(sgr, sgr_len))
+                    },
+                    b'A' => {
+                        self.state = AnsiParserState::Normal;
+                        parse_ansi_number_or(1, &self.partial_buf[0..i]).map(AnsiParserAction::CursorUp)
+                    },
+                    b'B' => {
+                        self.state = AnsiParserState::Normal;
+                        parse_ansi_number_or(1, &self.partial_buf[0..i]).map(AnsiParserAction::CursorDown)
+                    },
+                    b'C' => {
+                        self.state = AnsiParserState::Normal;
+                        parse_ansi_number_or(1, &self.partial_buf[0..i]).map(AnsiParserAction::CursorRight)
+                    },
+                    b'D' => {
+                        self.state = AnsiParserState::Normal;
+                        parse_ansi_number_or(1, &self.partial_buf[0..i]).map(AnsiParserAction::CursorLeft)
+                    },
+                    b'K' => {
+                        self.state = AnsiParserState::Normal;
+
+                        match parse_ansi_number_or(0, &self.partial_buf[0..i]) {
+                            Some(0) => Some(AnsiParserAction::EraseToLineEnd),
+                            _ => None
+                        }
                     },
                     b'@'..b'~' => {
                         self.state = AnsiParserState::Normal;
