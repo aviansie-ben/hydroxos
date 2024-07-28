@@ -109,8 +109,7 @@ impl<const N: usize> TtyReadQueue<N> {
     }
 
     pub fn has_room(&self, size: usize) -> bool {
-        assert!(size < N);
-        N - self.buf.len() >= size
+        size < N && N - self.buf.len() >= size
     }
 
     pub fn push_bytes(&mut self, mut data: &[u8]) -> bool {
@@ -137,7 +136,7 @@ impl<const N: usize> TtyReadQueue<N> {
                         return false;
                     }
                 }
-                data = &data[..data.len()];
+                data = &data[data.len()..];
             }
         }
 
