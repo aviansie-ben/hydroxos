@@ -1,4 +1,5 @@
-use core::mem;
+use alloc::string::String;
+use core::mem::{self, forget};
 
 use super::dev::kbd::{KeyboardLockState, ModifierState};
 
@@ -161,12 +162,38 @@ impl TryFrom<usize> for Keycode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum KeyAction {
+    None,
+    Char(char),
+    Str(&'static str),
+    String(String)
+}
+
+impl From<char> for KeyAction {
+    fn from(value: char) -> Self {
+        KeyAction::Char(value)
+    }
+}
+
+impl From<&'static str> for KeyAction {
+    fn from(value: &'static str) -> Self {
+        KeyAction::Str(value)
+    }
+}
+
+impl From<String> for KeyAction {
+    fn from(value: String) -> Self {
+        KeyAction::String(value)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum KeycodeMapEntry {
-    Simple(Option<char>),
-    Shift(Option<char>, Option<char>),
-    ShiftCaps(Option<char>, Option<char>),
-    NumLock(Option<char>, Option<char>)
+    Simple(KeyAction),
+    Shift(KeyAction, KeyAction),
+    ShiftCaps(KeyAction, KeyAction),
+    NumLock(KeyAction, KeyAction)
 }
 
 #[derive(Debug)]
@@ -183,45 +210,54 @@ impl KeycodeMap {
     pub const fn new(name: &'static str) -> Self {
         Self {
             name,
-            common: [KeycodeMapEntry::Simple(None); CommonKeycode::NUM_KEYCODES]
+            common: [const { KeycodeMapEntry::Simple(KeyAction::None) }; CommonKeycode::NUM_KEYCODES]
         }
     }
 
     pub const fn set_common(&mut self, k: CommonKeycode, e: KeycodeMapEntry) {
-        self.common[k as usize] = e;
+        match mem::replace(&mut self.common[k as usize], e) {
+            e @ KeycodeMapEntry::Simple(KeyAction::None) => {
+                // Drop doesn't do actually anything here and we need to avoid calling it to allow
+                // this function to be const.
+                forget(e);
+            },
+            _ => {
+                panic!("keycode map entry already set");
+            }
+        }
     }
 
     pub fn name(&self) -> &str {
         self.name
     }
 
-    pub fn get(&self, k: Keycode, lock_state: KeyboardLockState, mod_state: ModifierState) -> Option<char> {
+    pub fn get(&self, k: Keycode, lock_state: KeyboardLockState, mod_state: ModifierState) -> Option<&KeyAction> {
         if mod_state.ctrl() || mod_state.alt() || mod_state.super_key() {
             return None;
         }
 
         match k {
             Keycode::Common(k) => match self.common[k as usize] {
-                KeycodeMapEntry::Simple(ch) => ch,
-                KeycodeMapEntry::Shift(ch_false, ch_true) => {
+                KeycodeMapEntry::Simple(ref a) => Some(a),
+                KeycodeMapEntry::Shift(ref a_false, ref a_true) => {
                     if mod_state.shift() {
-                        ch_true
+                        Some(a_true)
                     } else {
-                        ch_false
+                        Some(a_false)
                     }
                 },
-                KeycodeMapEntry::ShiftCaps(ch_false, ch_true) => {
+                KeycodeMapEntry::ShiftCaps(ref a_false, ref a_true) => {
                     if mod_state.shift() != lock_state.caps_lock {
-                        ch_true
+                        Some(a_true)
                     } else {
-                        ch_false
+                        Some(a_false)
                     }
                 },
-                KeycodeMapEntry::NumLock(ch_false, ch_true) => {
+                KeycodeMapEntry::NumLock(ref a_false, ref a_true) => {
                     if lock_state.num_lock {
-                        ch_true
+                        Some(a_true)
                     } else {
-                        ch_false
+                        Some(a_false)
                     }
                 },
             },

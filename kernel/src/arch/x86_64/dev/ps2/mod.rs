@@ -1,4 +1,5 @@
 use alloc::boxed::Box;
+use alloc::string::String;
 
 use dyn_dyn::dyn_dyn_impl;
 
@@ -6,7 +7,7 @@ use crate::arch::{interrupt, pic};
 use crate::io::dev::kbd::{KeyPress, Keyboard, KeyboardError, KeyboardHeldKeys, KeyboardLockState, ModifierState};
 use crate::io::dev::{device_root, DeviceNode};
 use crate::io::dev::{hub::DeviceHub, Device, DeviceRef};
-use crate::io::keymap::{CommonKeycode, Keycode, KeycodeMap};
+use crate::io::keymap::{CommonKeycode, KeyAction, Keycode, KeycodeMap};
 use crate::io::vt;
 use crate::sync::future::FutureWriter;
 use crate::sync::uninterruptible::{UninterruptibleSpinlockGuard, UninterruptibleSpinlockReadGuard};
@@ -247,10 +248,16 @@ impl Ps2Keyboard {
                 code: key,
                 lock_state: guard.keyboard.lock_state,
                 mods: guard.keyboard.mod_state,
-                char: guard
+                str: match guard
                     .keyboard
                     .keycode_map
                     .get(key, guard.keyboard.lock_state, guard.keyboard.mod_state)
+                {
+                    None | Some(&KeyAction::None) => String::new(),
+                    Some(&KeyAction::Char(ch)) => String::from(ch),
+                    Some(&KeyAction::Str(s)) => String::from(s),
+                    Some(&KeyAction::String(ref s)) => s.clone()
+                }
             };
 
             if let Some(input_future) = guard.keyboard.input_future.take() {

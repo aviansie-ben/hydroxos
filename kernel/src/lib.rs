@@ -4,6 +4,7 @@
 #![feature(alloc_error_handler)]
 #![feature(coerce_unsized)]
 #![feature(const_mut_refs)]
+#![feature(const_replace)]
 #![feature(custom_test_frameworks)]
 #![feature(maybe_uninit_uninit_array)]
 #![feature(naked_functions)]

@@ -232,13 +232,10 @@ impl VirtualTerminal {
     }
 
     fn handle_key_pressed(&self, keypress: KeyPress) {
-        if let Some(ch) = keypress.char {
-            let mut vt = self.0.lock();
+        let mut vt = self.0.lock();
 
-            if vt.read_queue.has_room(ch.len_utf8()) {
-                let mut ch_bytes = [0_u8; 4];
-                vt.read_queue.push_bytes(ch.encode_utf8(&mut ch_bytes).as_bytes());
-            }
+        if vt.read_queue.has_room(keypress.str.len()) {
+            vt.read_queue.push_bytes(keypress.str.as_bytes());
         }
     }
 }

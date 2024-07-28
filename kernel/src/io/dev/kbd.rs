@@ -1,3 +1,5 @@
+use alloc::string::String;
+
 use super::Device;
 use crate::{
     io::keymap::{CommonKeycode, Keycode, KeycodeMap},
@@ -120,12 +122,13 @@ impl ModifierState {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyPress {
     pub code: Keycode,
     pub lock_state: KeyboardLockState,
     pub mods: ModifierState,
-    pub char: Option<char>
+    // TODO: Not great that we always need to alloc here
+    pub str: String
 }
 
 pub trait KeyboardHeldKeys {
