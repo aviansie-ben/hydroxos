@@ -75,3 +75,24 @@ macro_rules! log {
         ));
     }
 }
+
+#[macro_export]
+macro_rules! dbg {
+    () => {
+        $crate::log!(Info, "dbg", "[{}:{}:{}]", file!(), line!(), column!());
+    };
+    ($val:expr $(,)?) => {
+        match $val {
+            tmp => {
+                $crate::log!(
+                    Info, "dbg", "[{}:{}:{}] {} = {:?}",
+                    file!(), line!(), column!(), stringify!($val), &tmp
+                );
+                tmp
+            }
+        }
+    };
+    ($($val:expr),+ $(,)?) => {
+        ($($crate::dbg!($val)),+,)
+    };
+}
