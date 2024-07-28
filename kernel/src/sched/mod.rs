@@ -3,7 +3,8 @@
 //! This module contains the kernel's scheduler, which is responsible for keeping track of processes and threads running on the machine and
 //! facilitating context switching between them from interrupt handlers.
 
-use alloc::{boxed::Box, vec, vec::Vec};
+use alloc::boxed::Box;
+use alloc::collections::vec_deque::VecDeque;
 use core::cell::UnsafeCell;
 
 use self::task::{Process, Thread};
@@ -25,7 +26,7 @@ pub unsafe fn init() {
 static IN_INTERRUPT: UnsafeCell<bool> = UnsafeCell::new(false);
 
 #[thread_local]
-static SOFT_INTERRUPTS: UnsafeCell<Vec<Box<dyn FnOnce()>>> = UnsafeCell::new(vec![]);
+static SOFT_INTERRUPTS: UnsafeCell<VecDeque<Box<dyn FnOnce()>>> = UnsafeCell::new(VecDeque::new());
 
 /// Notifies the scheduler that an asynchronous hardware interrupt handler has begun.
 ///
@@ -74,7 +75,7 @@ pub fn enqueue_soft_interrupt<F: FnOnce() + 'static>(f: F) {
         f();
     } else {
         // SAFETY: No references to SOFT_INTERRUPTS can ever leak and no user-provided code runs while it is in use
-        unsafe { &mut *SOFT_INTERRUPTS.get() }.push(Box::new(f));
+        unsafe { &mut *SOFT_INTERRUPTS.get() }.push_back(Box::new(f));
     }
 }
 
@@ -83,7 +84,7 @@ pub(crate) fn run_soft_interrupts() {
     let _interrupts_disabled = InterruptDisabler::new();
 
     // SAFETY: No references to SOFT_INTERRUPTS can ever leak and no user-provided code runs while it is in use
-    while let Some(f) = unsafe { &mut *SOFT_INTERRUPTS.get() }.pop() {
+    while let Some(f) = unsafe { &mut *SOFT_INTERRUPTS.get() }.pop_front() {
         f();
     }
 }
