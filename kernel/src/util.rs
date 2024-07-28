@@ -250,6 +250,8 @@ impl<T, const N: usize> ArrayDeque<T, N> {
                 self.head += 1;
             }
 
+            self.len -= 1;
+
             Some(elem)
         } else {
             None
@@ -400,5 +402,120 @@ impl<'a, T, const N: usize> DoubleEndedIterator for ArrayDequeDrain<'a, T, N> {
 impl<'a, T, const N: usize> Drop for ArrayDequeDrain<'a, T, N> {
     fn drop(&mut self) {
         for _ in self {}
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::ArrayDeque;
+
+    #[test_case]
+    fn test_array_deque_new() {
+        let a: ArrayDeque<u32, 4> = ArrayDeque::new();
+
+        assert_eq!(0, a.len());
+        assert_eq!(None, a.get(0));
+    }
+
+    #[test_case]
+    fn test_array_deque_push_back() {
+        let mut a: ArrayDeque<u32, 4> = ArrayDeque::new();
+
+        assert_eq!(Ok(()), a.push_back(1234));
+
+        assert_eq!(1, a.len());
+        assert_eq!(Some(&1234), a.get(0));
+
+        assert_eq!(Ok(()), a.push_back(5678));
+
+        assert_eq!(2, a.len());
+        assert_eq!(Some(&1234), a.get(0));
+        assert_eq!(Some(&5678), a.get(1));
+    }
+
+    #[test_case]
+    fn test_array_deque_push_back_full() {
+        let mut a: ArrayDeque<u32, 4> = ArrayDeque::new();
+
+        assert_eq!(Ok(()), a.push_back(0));
+        assert_eq!(Ok(()), a.push_back(0));
+        assert_eq!(Ok(()), a.push_back(0));
+        assert_eq!(Ok(()), a.push_back(0));
+        assert_eq!(Err(1234), a.push_back(1234));
+
+        assert_eq!(4, a.len());
+        assert_eq!(Some(&0), a.get(0));
+        assert_eq!(Some(&0), a.get(3));
+    }
+
+    #[test_case]
+    fn test_array_deque_push_front() {
+        let mut a: ArrayDeque<u32, 4> = ArrayDeque::new();
+
+        assert_eq!(Ok(()), a.push_front(1234));
+
+        assert_eq!(1, a.len());
+        assert_eq!(Some(&1234), a.get(0));
+
+        assert_eq!(Ok(()), a.push_front(5678));
+
+        assert_eq!(2, a.len());
+        assert_eq!(Some(&5678), a.get(0));
+        assert_eq!(Some(&1234), a.get(1));
+    }
+
+    #[test_case]
+    fn test_array_deque_push_front_full() {
+        let mut a: ArrayDeque<u32, 4> = ArrayDeque::new();
+
+        assert_eq!(Ok(()), a.push_front(0));
+        assert_eq!(Ok(()), a.push_front(0));
+        assert_eq!(Ok(()), a.push_front(0));
+        assert_eq!(Ok(()), a.push_front(0));
+        assert_eq!(Err(1234), a.push_front(1234));
+
+        assert_eq!(4, a.len());
+        assert_eq!(Some(&0), a.get(0));
+        assert_eq!(Some(&0), a.get(3));
+    }
+
+    #[test_case]
+    fn test_array_deque_pop_front() {
+        let mut a: ArrayDeque<u32, 4> = ArrayDeque::new();
+
+        assert_eq!(None, a.pop_front());
+        assert_eq!(0, a.len());
+
+        assert_eq!(Ok(()), a.push_back(1234));
+        assert_eq!(Ok(()), a.push_back(5678));
+
+        assert_eq!(Some(1234), a.pop_front());
+        assert_eq!(1, a.len());
+
+        assert_eq!(Some(5678), a.pop_front());
+        assert_eq!(0, a.len());
+
+        assert_eq!(None, a.pop_front());
+        assert_eq!(0, a.len());
+    }
+
+    #[test_case]
+    fn test_array_deque_pop_back() {
+        let mut a: ArrayDeque<u32, 4> = ArrayDeque::new();
+
+        assert_eq!(None, a.pop_front());
+        assert_eq!(0, a.len());
+
+        assert_eq!(Ok(()), a.push_back(1234));
+        assert_eq!(Ok(()), a.push_back(5678));
+
+        assert_eq!(Some(5678), a.pop_back());
+        assert_eq!(1, a.len());
+
+        assert_eq!(Some(1234), a.pop_back());
+        assert_eq!(0, a.len());
+
+        assert_eq!(None, a.pop_back());
+        assert_eq!(0, a.len());
     }
 }
