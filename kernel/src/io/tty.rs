@@ -11,6 +11,10 @@ pub trait Tty: Send + Sync {
     unsafe fn flush(&self) -> Future<Result<(), ()>>;
 
     unsafe fn read(&self, bytes: *mut [u8]) -> Future<Result<usize, ()>>;
+
+    fn size(&self) -> Result<(usize, usize), ()> {
+        Err(())
+    }
 }
 
 pub trait TtyExt: Tty {

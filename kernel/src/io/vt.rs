@@ -211,6 +211,10 @@ impl Tty for VirtualTerminal {
     unsafe fn read(&self, bytes: *mut [u8]) -> Future<Result<usize, ()>> {
         self.0.lock().read_queue.read(bytes)
     }
+
+    fn size(&self) -> Result<(usize, usize), ()> {
+        Ok(self.0.lock().size)
+    }
 }
 
 #[dyn_dyn_impl(Tty)]
