@@ -6,7 +6,7 @@ use crate::util::OneShotManualInit;
 pub struct CpuFeature {
     feature_vec_idx: u32,
     feature_vec_bit: u32,
-    name: &'static str
+    name: &'static str,
 }
 
 impl CpuFeature {
@@ -17,12 +17,12 @@ impl CpuFeature {
     pub const AVX: CpuFeature = CpuFeature {
         feature_vec_idx: CpuFeature::FEATURE_VEC_IDX_01_ECX,
         feature_vec_bit: 1 << 28,
-        name: "avx"
+        name: "avx",
     };
     pub const XSAVE: CpuFeature = CpuFeature {
         feature_vec_idx: CpuFeature::FEATURE_VEC_IDX_01_ECX,
         feature_vec_bit: 1 << 26,
-        name: "xsave"
+        name: "xsave",
     };
 }
 

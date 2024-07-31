@@ -3,7 +3,7 @@ use core::fmt;
 
 use crate::{
     sync::{future::FutureWriter, Future},
-    util::ArrayDeque
+    util::ArrayDeque,
 };
 
 pub trait Tty: Send + Sync {
@@ -42,7 +42,7 @@ impl<T: Tty + ?Sized> fmt::Write for TtyWriter<'_, T> {
         unsafe {
             match self.0.write(s.as_bytes() as *const [u8]).unwrap_blocking() {
                 Ok(()) => Ok(()),
-                Err(_) => Err(fmt::Error)
+                Err(_) => Err(fmt::Error),
             }
         }
     }
@@ -84,7 +84,7 @@ impl<'a, T: Tty + ?Sized> TtyCharReader<'a, T> {
 struct TtyReadRequest {
     future: FutureWriter<Result<usize, ()>>,
     buf: *mut [u8],
-    pos: usize
+    pos: usize,
 }
 
 impl TtyReadRequest {
@@ -101,14 +101,14 @@ impl TtyReadRequest {
 #[derive(Debug)]
 pub struct TtyReadQueue<const N: usize> {
     buf: ArrayDeque<u8, N>,
-    requests: VecDeque<TtyReadRequest>
+    requests: VecDeque<TtyReadRequest>,
 }
 
 impl<const N: usize> TtyReadQueue<N> {
     pub fn new() -> Self {
         Self {
             buf: ArrayDeque::new(),
-            requests: VecDeque::new()
+            requests: VecDeque::new(),
         }
     }
 
@@ -165,7 +165,7 @@ impl<const N: usize> TtyReadQueue<N> {
             self.requests.push_back(TtyReadRequest {
                 future: future_writer,
                 buf: bytes,
-                pos
+                pos,
             });
 
             future

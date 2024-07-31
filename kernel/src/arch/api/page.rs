@@ -8,7 +8,7 @@ pub const IS_PHYS_MEM_ALWAYS_MAPPED: bool = true;
 
 #[derive(Debug)]
 pub struct PhysMemPtr<T: ?Sized> {
-    _data: PhantomData<*mut T>
+    _data: PhantomData<*mut T>,
 }
 
 impl<T: ?Sized> PhysMemPtr<T> {

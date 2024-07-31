@@ -20,7 +20,7 @@ use crate::util::OneShotManualInit;
 pub struct VTChar {
     pub ch: char,
     pub fg_color: AnsiColor,
-    pub bg_color: AnsiColor
+    pub bg_color: AnsiColor,
 }
 
 #[derive(Debug)]
@@ -34,7 +34,7 @@ pub struct VirtualTerminalInternals {
     pub bg_color: AnsiColor,
     pub cursor_hidden: bool,
     id: usize,
-    read_queue: TtyReadQueue<64>
+    read_queue: TtyReadQueue<64>,
 }
 
 impl VirtualTerminalInternals {
@@ -71,7 +71,7 @@ impl VirtualTerminalInternals {
         let clear_char = VTChar {
             ch: ' ',
             fg_color: self.fg_color,
-            bg_color: self.bg_color
+            bg_color: self.bg_color,
         };
 
         assert!(start <= self.buf.len());
@@ -131,14 +131,14 @@ impl VirtualTerminalInternals {
                 self.buf[self.cursor_off()] = VTChar {
                     ch,
                     fg_color: self.fg_color,
-                    bg_color: self.bg_color
+                    bg_color: self.bg_color,
                 };
 
                 self.cursor_pos.0 += 1;
                 if self.cursor_pos.0 >= self.size.0 {
                     self.new_line();
                 };
-            }
+            },
         }
     }
 
@@ -172,11 +172,11 @@ impl VirtualTerminalInternals {
                         },
                         AnsiParserSgrAction::SetBgColor(color) => {
                             self.bg_color = color;
-                        }
+                        },
                     }
                 }
             },
-            None => {}
+            None => {},
         }
     }
 
@@ -231,9 +231,9 @@ impl VirtualTerminal {
                 VTChar {
                     ch: ' ',
                     fg_color: AnsiColor::White,
-                    bg_color: AnsiColor::Black
+                    bg_color: AnsiColor::Black,
                 },
-                width * height
+                width * height,
             ))
             .into_boxed_slice(),
             buf_line: 0,
@@ -244,7 +244,7 @@ impl VirtualTerminal {
             bg_color: AnsiColor::Black,
             cursor_hidden: false,
             id,
-            read_queue: TtyReadQueue::new()
+            read_queue: TtyReadQueue::new(),
         }))
     }
 
@@ -267,14 +267,14 @@ pub trait TerminalDisplay: Device {
 struct DisplayInfo {
     display: DeviceRef<dyn TerminalDisplay>,
     keyboard: Option<DeviceRef<dyn Keyboard>>,
-    terminal_id: usize
+    terminal_id: usize,
 }
 
 #[derive(Debug)]
 struct VirtualTerminalManagerInternals {
     this: Option<DeviceRef<VirtualTerminalManager>>,
     terminals: Vec<DeviceRef<VirtualTerminal>>,
-    displays: Vec<DisplayInfo>
+    displays: Vec<DisplayInfo>,
 }
 
 impl VirtualTerminalManagerInternals {
@@ -287,7 +287,7 @@ impl VirtualTerminalManagerInternals {
 
         self.terminals.push(
             DeviceNode::new(Box::from("vt0"), VirtualTerminal::new(0, width, height))
-                .connect(DeviceRef::<VirtualTerminalManager>::downgrade(own_ref))
+                .connect(DeviceRef::<VirtualTerminalManager>::downgrade(own_ref)),
         );
 
         self.displays[0].display.dev().redraw(&self.terminals[0].dev().0.lock());
@@ -317,7 +317,7 @@ impl VirtualTerminalManagerInternals {
 
 #[derive(Debug)]
 pub struct VirtualTerminalManager {
-    internal: UninterruptibleSpinlock<VirtualTerminalManagerInternals>
+    internal: UninterruptibleSpinlock<VirtualTerminalManagerInternals>,
 }
 
 impl VirtualTerminalManager {
@@ -329,9 +329,9 @@ impl VirtualTerminalManager {
                 displays: vec![DisplayInfo {
                     display: primary_display,
                     keyboard: None,
-                    terminal_id: 0
-                }]
-            })
+                    terminal_id: 0,
+                }],
+            }),
         }
     }
 
@@ -375,7 +375,7 @@ impl VirtualTerminalManager {
                 Ok(keypress) => {
                     this.dev().handle_key_pressed(display_id, keypress);
                 },
-                Err(_) => unimplemented!()
+                Err(_) => unimplemented!(),
             });
         }
     }
@@ -397,7 +397,7 @@ impl DeviceHub for VirtualTerminalManager {
     fn try_for_children(&self, f: &mut dyn FnMut(&DeviceRef<dyn Device>) -> bool) -> Result<bool, DeviceHubLockedError> {
         match self.internal.try_lock() {
             Some(internal) => Ok(internal.for_terminals(f)),
-            None => Err(DeviceHubLockedError)
+            None => Err(DeviceHubLockedError),
         }
     }
 }
@@ -419,7 +419,7 @@ pub unsafe fn init(primary_display: DeviceRef<dyn TerminalDisplay>) {
     VT_MANAGER.set(
         device_root()
             .dev()
-            .add_device(DeviceNode::new(Box::from("vtmgr"), VirtualTerminalManager::new(primary_display)))
+            .add_device(DeviceNode::new(Box::from("vtmgr"), VirtualTerminalManager::new(primary_display))),
     );
 }
 

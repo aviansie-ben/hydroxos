@@ -7,7 +7,7 @@ pub const XSAVE_AVX_SIZE: usize = 256;
 pub const XSAVE_MAX_EXTENDED_SIZE: usize = XSAVE_AVX_SIZE + 1024;
 
 struct XSaveInfo {
-    avx_offset: Option<usize>
+    avx_offset: Option<usize>,
 }
 
 static XSAVE: OneShotManualInit<XSaveInfo> = OneShotManualInit::uninit();
@@ -33,7 +33,7 @@ pub enum GeneralRegister {
     R12,
     R13,
     R14,
-    R15
+    R15,
 }
 
 #[derive(Debug, Clone)]
@@ -48,7 +48,7 @@ pub struct SavedBasicRegisters {
     pub fs: u16,
     pub gs: u16,
     pub fsbase: u64,
-    pub gsbase: u64
+    pub gsbase: u64,
 }
 
 impl SavedBasicRegisters {
@@ -64,7 +64,7 @@ impl SavedBasicRegisters {
             fs: 0,
             gs: 0,
             fsbase: 0,
-            gsbase: 0
+            gsbase: 0,
         }
     }
 
@@ -135,7 +135,7 @@ fn from_ymm_val(val: &[u8; 32]) -> ([u8; 16], [u8; 16]) {
 #[derive(Clone, Debug)]
 #[repr(C)]
 pub struct XSaveAvx {
-    pub ymm_h: [[u8; 16]; 16]
+    pub ymm_h: [[u8; 16]; 16],
 }
 
 impl XSaveAvx {
@@ -180,7 +180,7 @@ pub struct SavedExtendedRegisters {
     xstate_bv: [u8; 8],
     xcomp_bv: [u8; 8],
     reserved_2: [u8; 48],
-    xsave_extended: XSaveExtendedArea
+    xsave_extended: XSaveExtendedArea,
 }
 
 impl SavedExtendedRegisters {
@@ -201,7 +201,7 @@ impl SavedExtendedRegisters {
             xstate_bv: [0; 8],
             xcomp_bv: [0; 8],
             reserved_2: [0; 48],
-            xsave_extended: XSaveExtendedArea::new()
+            xsave_extended: XSaveExtendedArea::new(),
         }
     }
 
@@ -300,28 +300,28 @@ impl SavedExtendedRegisters {
 
 pub struct SavedRegisters {
     pub basic: SavedBasicRegisters,
-    pub ext: SavedExtendedRegisters
+    pub ext: SavedExtendedRegisters,
 }
 
 impl SavedRegisters {
     pub fn new() -> SavedRegisters {
         SavedRegisters {
             basic: SavedBasicRegisters::new(),
-            ext: SavedExtendedRegisters::new()
+            ext: SavedExtendedRegisters::new(),
         }
     }
 
     pub fn new_kernel_thread(f: extern "C" fn(*mut u8) -> !, arg: *mut u8, stack: *mut u8) -> SavedRegisters {
         SavedRegisters {
             basic: SavedBasicRegisters::new_kernel_thread(f, arg, stack),
-            ext: SavedExtendedRegisters::new()
+            ext: SavedExtendedRegisters::new(),
         }
     }
 
     pub fn new_user_thread(f: u64, arg: u64, stack: u64) -> SavedRegisters {
         SavedRegisters {
             basic: SavedBasicRegisters::new_user_thread(f, arg, stack),
-            ext: SavedExtendedRegisters::new()
+            ext: SavedExtendedRegisters::new(),
         }
     }
 }
@@ -374,11 +374,11 @@ mod test {
     pub const XMM_ZERO: [u8; 16] = [0; 16];
     pub const XMM0_VAL: [u8; 16] = [
         0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, //
-        0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10
+        0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10,
     ];
     pub const XMM14_VAL: [u8; 16] = [
         0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF, //
-        0xCA, 0xFE, 0xDE, 0xAD, 0xCA, 0xFE, 0xD0, 0x0D
+        0xCA, 0xFE, 0xDE, 0xAD, 0xCA, 0xFE, 0xD0, 0x0D,
     ];
 
     pub const YMM_ZERO: [u8; 32] = [0; 32];
@@ -386,13 +386,13 @@ mod test {
         0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, //
         0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10, //
         0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10, //
-        0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF
+        0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
     ];
     pub const YMM14_VAL: [u8; 32] = [
         0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF, //
         0xCA, 0xFE, 0xDE, 0xAD, 0xCA, 0xFE, 0xD0, 0x0D, //
         0xCA, 0xFE, 0xD0, 0x0D, 0xCA, 0xFE, 0xDE, 0xAD, //
-        0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF
+        0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF, 0xBE, 0xEF,
     ];
 
     #[test_case]

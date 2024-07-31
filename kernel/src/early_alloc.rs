@@ -16,7 +16,7 @@ pub fn init() {
             ptr::null_mut(),
             EARLY_ALLOC_AREA.get() as *mut u8,
             Ordering::Relaxed,
-            Ordering::Relaxed
+            Ordering::Relaxed,
         )
         .is_err()
     {
@@ -138,7 +138,7 @@ pub unsafe fn realloc(ptr: *mut u8, old_size: usize, new_size: usize) -> *mut u8
     match new_size.cmp(&old_size) {
         cmp::Ordering::Greater => realloc_grow(ptr, old_size, new_size),
         cmp::Ordering::Less => realloc_shrink(ptr, old_size, new_size),
-        cmp::Ordering::Equal => ptr
+        cmp::Ordering::Equal => ptr,
     }
 }
 

@@ -30,7 +30,7 @@ pub enum Color {
     LightRed = 0xc,
     Pink = 0xd,
     Yellow = 0xe,
-    White = 0xf
+    White = 0xf,
 }
 
 impl Color {
@@ -51,7 +51,7 @@ impl Color {
             AnsiColor::LightRed => Color::LightRed,
             AnsiColor::Pink => Color::Pink,
             AnsiColor::Yellow => Color::Yellow,
-            AnsiColor::White => Color::White
+            AnsiColor::White => Color::White,
         }
     }
 }
@@ -70,14 +70,14 @@ impl ColorCode {
 #[repr(C)]
 struct ScreenChar {
     ch: u8,
-    color: ColorCode
+    color: ColorCode,
 }
 
 #[derive(Debug)]
 pub struct VgaTextBuffer {
     buf: PhysMemPtr<[ScreenChar]>,
     width: usize,
-    height: usize
+    height: usize,
 }
 
 impl VgaTextBuffer {
@@ -97,7 +97,7 @@ impl VgaTextBuffer {
     pub fn clear(&mut self, fg_color: Color, bg_color: Color) {
         let clear_char = ScreenChar {
             ch: b' ',
-            color: ColorCode::new(fg_color, bg_color)
+            color: ColorCode::new(fg_color, bg_color),
         };
 
         for i in 0..(self.width * self.height) {
@@ -114,7 +114,7 @@ impl VgaTextBuffer {
         unsafe {
             core::ptr::write_volatile(self.buf.ptr().get_unchecked_mut(y * self.width + x), ScreenChar {
                 ch,
-                color: ColorCode::new(fg_color, bg_color)
+                color: ColorCode::new(fg_color, bg_color),
             });
         }
     }
@@ -128,7 +128,7 @@ impl VgaTextBuffer {
         unsafe {
             core::ptr::write_volatile(
                 self.buf.ptr().get_unchecked_mut(to_y * self.width + to_x),
-                core::ptr::read_volatile(self.buf.ptr().get_unchecked_mut(from_y * self.width + from_y))
+                core::ptr::read_volatile(self.buf.ptr().get_unchecked_mut(from_y * self.width + from_y)),
             );
         }
     }
@@ -163,13 +163,13 @@ unsafe impl Sync for VgaTextBuffer {}
 
 #[derive(Debug)]
 pub struct VgaTextBufferDevice {
-    internal: UninterruptibleSpinlock<VgaTextBuffer>
+    internal: UninterruptibleSpinlock<VgaTextBuffer>,
 }
 
 impl VgaTextBufferDevice {
     pub fn new(buf: VgaTextBuffer) -> VgaTextBufferDevice {
         VgaTextBufferDevice {
-            internal: UninterruptibleSpinlock::new(buf)
+            internal: UninterruptibleSpinlock::new(buf),
         }
     }
 
@@ -224,7 +224,7 @@ pub struct Writer<'a> {
     y: usize,
     fg_color: Color,
     bg_color: Color,
-    buf: &'a mut VgaTextBuffer
+    buf: &'a mut VgaTextBuffer,
 }
 
 impl<'a> Writer<'a> {
@@ -234,7 +234,7 @@ impl<'a> Writer<'a> {
             y: 0,
             fg_color: Color::White,
             bg_color: Color::Black,
-            buf
+            buf,
         }
     }
 

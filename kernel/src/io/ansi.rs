@@ -5,7 +5,7 @@ enum AnsiParserState {
     Normal,
     PartialUtf8(usize, usize),
     Escape,
-    PartialCsi(usize)
+    PartialCsi(usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,7 +25,7 @@ pub enum AnsiColor {
     LightBlue,
     Pink,
     LightCyan,
-    White
+    White,
 }
 
 impl AnsiColor {
@@ -46,7 +46,7 @@ impl AnsiColor {
             AnsiColor::LightBlue => 64,
             AnsiColor::Pink => 65,
             AnsiColor::LightCyan => 66,
-            AnsiColor::White => 67
+            AnsiColor::White => 67,
         }
     }
 
@@ -70,7 +70,7 @@ impl AnsiColor {
             67 => AnsiColor::White,
             _ => {
                 return None;
-            }
+            },
         })
     }
 }
@@ -79,7 +79,7 @@ impl AnsiColor {
 pub enum AnsiParserSgrAction {
     Reset,
     SetFgColor(AnsiColor),
-    SetBgColor(AnsiColor)
+    SetBgColor(AnsiColor),
 }
 
 impl fmt::Display for AnsiParserSgrAction {
@@ -87,7 +87,7 @@ impl fmt::Display for AnsiParserSgrAction {
         match *self {
             AnsiParserSgrAction::Reset => write!(f, "0"),
             AnsiParserSgrAction::SetFgColor(color) => write!(f, "{}", 30 + color.code_offset()),
-            AnsiParserSgrAction::SetBgColor(color) => write!(f, "{}", 40 + color.code_offset())
+            AnsiParserSgrAction::SetBgColor(color) => write!(f, "{}", 40 + color.code_offset()),
         }
     }
 }
@@ -100,13 +100,13 @@ pub enum AnsiParserAction {
     CursorRight(u32),
     CursorLeft(u32),
     EraseToLineEnd,
-    Sgr([AnsiParserSgrAction; AnsiParser::MAX_SGR_CMDS], usize)
+    Sgr([AnsiParserSgrAction; AnsiParser::MAX_SGR_CMDS], usize),
 }
 
 #[derive(Debug)]
 pub struct AnsiParser {
     state: AnsiParserState,
-    partial_buf: [u8; AnsiParser::MAX_CSI_LENGTH]
+    partial_buf: [u8; AnsiParser::MAX_CSI_LENGTH],
 }
 
 fn parse_ansi_sgr(sgr: &[u8]) -> ([AnsiParserSgrAction; AnsiParser::MAX_SGR_CMDS], usize) {
@@ -128,7 +128,7 @@ fn parse_ansi_sgr(sgr: &[u8]) -> ([AnsiParserSgrAction; AnsiParser::MAX_SGR_CMDS
             b'0'..=b'9' => {
                 current_cmd = current_cmd.saturating_mul(10).saturating_add((ch - b'0') as u32);
             },
-            _ => {}
+            _ => {},
         }
     }
 
@@ -149,7 +149,7 @@ fn parse_ansi_sgr(sgr: &[u8]) -> ([AnsiParserSgrAction; AnsiParser::MAX_SGR_CMDS
             0 => Some(AnsiParserSgrAction::Reset),
             30..=37 | 90..=97 => Some(AnsiParserSgrAction::SetFgColor(AnsiColor::from_code_offset(cmd - 30).unwrap())),
             40..=47 | 100..=107 => Some(AnsiParserSgrAction::SetBgColor(AnsiColor::from_code_offset(cmd - 40).unwrap())),
-            _ => None
+            _ => None,
         };
 
         if let Some(action) = action {
@@ -180,7 +180,7 @@ impl AnsiParser {
     pub fn new() -> AnsiParser {
         AnsiParser {
             state: AnsiParserState::Normal,
-            partial_buf: [0; AnsiParser::MAX_CSI_LENGTH]
+            partial_buf: [0; AnsiParser::MAX_CSI_LENGTH],
         }
     }
 
@@ -210,7 +210,7 @@ impl AnsiParser {
                     self.state = AnsiParserState::PartialUtf8(1, 4);
                     None
                 },
-                _ => Some(AnsiParserAction::WriteChar(b as char))
+                _ => Some(AnsiParserAction::WriteChar(b as char)),
             },
             AnsiParserState::PartialUtf8(i, len) => {
                 self.partial_buf[i] = b;
@@ -222,7 +222,7 @@ impl AnsiParser {
                             s.chars().next().unwrap()
                         } else {
                             '\u{fffd}'
-                        }
+                        },
                     ))
                 } else {
                     self.state = AnsiParserState::PartialUtf8(i + 1, len);
@@ -237,14 +237,14 @@ impl AnsiParser {
                 _ => {
                     self.state = AnsiParserState::Normal;
                     None
-                }
+                },
             },
             AnsiParserState::PartialCsi(AnsiParser::MAX_CSI_LENGTH) => match b {
                 b'@'..b'~' => {
                     self.state = AnsiParserState::Normal;
                     None
                 },
-                _ => None
+                _ => None,
             },
             AnsiParserState::PartialCsi(i) => {
                 self.partial_buf[i] = b;
@@ -277,7 +277,7 @@ impl AnsiParser {
 
                         match parse_ansi_number_or(0, &self.partial_buf[0..i]) {
                             Some(0) => Some(AnsiParserAction::EraseToLineEnd),
-                            _ => None
+                            _ => None,
                         }
                     },
                     b'@'..b'~' => {
@@ -287,9 +287,9 @@ impl AnsiParser {
                     _ => {
                         self.state = AnsiParserState::PartialCsi(i + 1);
                         None
-                    }
+                    },
                 }
-            }
+            },
         }
     }
 }

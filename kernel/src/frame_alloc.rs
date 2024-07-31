@@ -71,13 +71,13 @@ pub trait FrameAllocator {
 
 #[repr(C)]
 struct StackFrameAllocatorPage {
-    frames: [PhysAddr; NUM_FRAMES_PER_PAGE]
+    frames: [PhysAddr; NUM_FRAMES_PER_PAGE],
 }
 
 /// A page frame allocator that maintains an internal stack of free frames.
 pub struct StackFrameAllocator {
     num_frames_available: usize,
-    stack_top: Option<PhysMemPtr<StackFrameAllocatorPage>>
+    stack_top: Option<PhysMemPtr<StackFrameAllocatorPage>>,
 }
 
 impl StackFrameAllocator {
@@ -85,7 +85,7 @@ impl StackFrameAllocator {
     pub const fn new() -> StackFrameAllocator {
         StackFrameAllocator {
             num_frames_available: 0,
-            stack_top: None
+            stack_top: None,
         }
     }
 
@@ -199,7 +199,7 @@ fn is_free(region_ty: MemoryRegionType) -> bool {
     match region_ty {
         MemoryRegionType::Usable => true,
         MemoryRegionType::Bootloader => true,
-        _ => false
+        _ => false,
     }
 }
 
@@ -214,7 +214,7 @@ fn is_usable(region_ty: MemoryRegionType) -> bool {
         MemoryRegionType::Bootloader => true,
         MemoryRegionType::BootInfo => true,
         MemoryRegionType::Package => true,
-        _ => false
+        _ => false,
     }
 }
 
@@ -267,7 +267,7 @@ mod tests {
         match table.translate(VirtAddr::new(TEST_AREA[idx].as_ptr() as u64)) {
             TranslateResult::Mapped { frame, offset, flags: _ } => PhysAddr::new((frame.start_address() + offset).as_u64()),
             TranslateResult::NotMapped => unreachable!(),
-            TranslateResult::InvalidFrameAddress(_) => unreachable!()
+            TranslateResult::InvalidFrameAddress(_) => unreachable!(),
         }
     }
 

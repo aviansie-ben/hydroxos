@@ -58,14 +58,14 @@ impl<T: DeviceHub + ?Sized> DeviceHubExt for T {
 #[derive(Debug)]
 struct VirtualDeviceHubInternals {
     own_ref: DeviceWeak<VirtualDeviceHub>,
-    children: Vec<DeviceRef<dyn Device>>
+    children: Vec<DeviceRef<dyn Device>>,
 }
 
 impl VirtualDeviceHubInternals {
     pub fn new() -> VirtualDeviceHubInternals {
         VirtualDeviceHubInternals {
             own_ref: DeviceWeak::new(),
-            children: vec![]
+            children: vec![],
         }
     }
 
@@ -117,13 +117,13 @@ impl VirtualDeviceHubInternals {
 
 #[derive(Debug)]
 pub struct VirtualDeviceHub {
-    internal: UninterruptibleSpinlock<VirtualDeviceHubInternals>
+    internal: UninterruptibleSpinlock<VirtualDeviceHubInternals>,
 }
 
 impl VirtualDeviceHub {
     pub fn new() -> VirtualDeviceHub {
         VirtualDeviceHub {
-            internal: UninterruptibleSpinlock::new(VirtualDeviceHubInternals::new())
+            internal: UninterruptibleSpinlock::new(VirtualDeviceHubInternals::new()),
         }
     }
 
@@ -155,7 +155,7 @@ impl DeviceHub for VirtualDeviceHub {
     fn try_for_children(&self, f: &mut dyn FnMut(&DeviceRef<dyn Device>) -> bool) -> Result<bool, DeviceHubLockedError> {
         match self.internal.try_lock() {
             Some(lock) => Ok(lock.for_children(f)),
-            None => Err(DeviceHubLockedError)
+            None => Err(DeviceHubLockedError),
         }
     }
 }

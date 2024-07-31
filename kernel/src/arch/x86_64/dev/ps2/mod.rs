@@ -21,13 +21,13 @@ mod scancode_2_map;
 enum ScancodeKey {
     Basic(u8),
     Extended(u8),
-    DualExtended(u8, u8)
+    DualExtended(u8, u8),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Scancode {
     key: ScancodeKey,
-    released: bool
+    released: bool,
 }
 
 impl Scancode {
@@ -37,68 +37,68 @@ impl Scancode {
                 Some(0xF0) if buf.len() >= 3 => Some((
                     Scancode {
                         key: ScancodeKey::Extended(buf[2]),
-                        released: true
+                        released: true,
                     },
-                    3
+                    3,
                 )),
                 Some(0xF0) => None,
                 Some(key) => Some((
                     Scancode {
                         key: ScancodeKey::Extended(key),
-                        released: false
+                        released: false,
                     },
-                    2
+                    2,
                 )),
-                None => None
+                None => None,
             },
             Some(0xE1) => match buf.get(1).copied() {
                 Some(0xF0) if buf.len() >= 5 => Some((
                     Scancode {
                         key: ScancodeKey::DualExtended(buf[2], buf[4]),
-                        released: true
+                        released: true,
                     },
-                    5
+                    5,
                 )),
                 Some(0xF0) => None,
                 _ if buf.len() >= 3 => Some((
                     Scancode {
                         key: ScancodeKey::DualExtended(buf[1], buf[2]),
-                        released: false
+                        released: false,
                     },
-                    3
+                    3,
                 )),
-                _ => None
+                _ => None,
             },
             Some(0xF0) if buf.len() >= 2 => Some((
                 Scancode {
                     key: ScancodeKey::Basic(buf[1]),
-                    released: true
+                    released: true,
                 },
-                2
+                2,
             )),
             Some(0xF0) => None,
             Some(key) => Some((
                 Scancode {
                     key: ScancodeKey::Basic(key),
-                    released: false
+                    released: false,
                 },
-                1
+                1,
             )),
-            None => None
+            None => None,
         }
     }
 }
 
 #[derive(Debug)]
 enum ScancodeMapDualList {
-    Static(&'static [(u8, u8, Keycode)])
+    Static(&'static [(u8, u8, Keycode)]),
 }
 
 #[derive(Debug)]
 struct ScancodeMap {
     basic: [Option<Keycode>; 256],
     extended: [Option<Keycode>; 256],
-    dual_extended: ScancodeMapDualList
+    dual_extended: ScancodeMapDualList,
 }
 
 impl ScancodeMap {
@@ -107,8 +107,8 @@ impl ScancodeMap {
             ScancodeKey::Basic(b) => self.basic[b as usize],
             ScancodeKey::Extended(b) => self.extended[b as usize],
             ScancodeKey::DualExtended(b0, b1) => match self.dual_extended {
-                ScancodeMapDualList::Static(list) => list.iter().find(|&&(m0, m1, _)| m0 == b0 && m1 == b1).map(|&(_, _, k)| k)
-            }
+                ScancodeMapDualList::Static(list) => list.iter().find(|&&(m0, m1, _)| m0 == b0 && m1 == b1).map(|&(_, _, k)| k),
+            },
         }
     }
 }
@@ -117,7 +117,7 @@ impl ScancodeMap {
 pub enum Ps2Error {
     ControllerError(ps2::error::ControllerError),
     MouseError(ps2::error::MouseError),
-    KeyboardError(ps2::error::KeyboardError)
+    KeyboardError(ps2::error::KeyboardError),
 }
 
 impl From<ps2::error::ControllerError> for Ps2Error {
@@ -130,7 +130,7 @@ impl From<ps2::error::MouseError> for Ps2Error {
     fn from(err: ps2::error::MouseError) -> Self {
         match err {
             ps2::error::MouseError::ControllerError(err) => Ps2Error::ControllerError(err),
-            _ => Ps2Error::MouseError(err)
+            _ => Ps2Error::MouseError(err),
         }
     }
 }
@@ -139,14 +139,14 @@ impl From<ps2::error::KeyboardError> for Ps2Error {
     fn from(err: ps2::error::KeyboardError) -> Self {
         match err {
             ps2::error::KeyboardError::ControllerError(err) => Ps2Error::ControllerError(err),
-            _ => Ps2Error::KeyboardError(err)
+            _ => Ps2Error::KeyboardError(err),
         }
     }
 }
 
 struct Ps2KeyboardGuard<'a> {
     controller: UninterruptibleSpinlockGuard<'a, Ps2ControllerInternals>,
-    keyboard: &'a mut Ps2KeyboardInternals
+    keyboard: &'a mut Ps2KeyboardInternals,
 }
 
 impl<'a> Ps2KeyboardGuard<'a> {
@@ -165,13 +165,13 @@ impl<'a> Ps2KeyboardGuard<'a> {
 
 #[derive(Debug)]
 struct Ps2KeyboardHeldKeys {
-    held: [bool; CommonKeycode::NUM_KEYCODES]
+    held: [bool; CommonKeycode::NUM_KEYCODES],
 }
 
 impl Ps2KeyboardHeldKeys {
     pub fn new() -> Self {
         Self {
-            held: [false; CommonKeycode::NUM_KEYCODES]
+            held: [false; CommonKeycode::NUM_KEYCODES],
         }
     }
 }
@@ -180,7 +180,7 @@ impl KeyboardHeldKeys for Ps2KeyboardHeldKeys {
     fn is_held(&self, k: Keycode) -> bool {
         match k {
             Keycode::Common(k) => self.held[k as usize],
-            Keycode::DeviceSpecific(_) => false
+            Keycode::DeviceSpecific(_) => false,
         }
     }
 
@@ -216,13 +216,13 @@ struct Ps2KeyboardInternals {
     scancode_buf: [u8; 5],
     scancode_buf_pos: usize,
     scancode_map: &'static ScancodeMap,
-    keycode_map: &'static KeycodeMap
+    keycode_map: &'static KeycodeMap,
 }
 
 #[derive(Debug)]
 pub struct Ps2Keyboard {
     internal: SharedUnsafeCell<Ps2KeyboardInternals>,
-    controller: DeviceRef<Ps2Controller>
+    controller: DeviceRef<Ps2Controller>,
 }
 
 impl Ps2Keyboard {
@@ -234,7 +234,7 @@ impl Ps2Keyboard {
         assert!(self.controller.dev().internal.is_guarded_by(&guard));
         Ps2KeyboardGuard {
             controller: guard,
-            keyboard: unsafe { &mut *self.internal.get() }
+            keyboard: unsafe { &mut *self.internal.get() },
         }
     }
 
@@ -256,8 +256,8 @@ impl Ps2Keyboard {
                     None | Some(&KeyAction::None) => String::new(),
                     Some(&KeyAction::Char(ch)) => String::from(ch),
                     Some(&KeyAction::Str(s)) => String::from(s),
-                    Some(&KeyAction::String(ref s)) => s.clone()
-                }
+                    Some(&KeyAction::String(ref s)) => s.clone(),
+                },
             };
 
             if let Some(input_future) = guard.keyboard.input_future.take() {
@@ -289,13 +289,13 @@ impl Ps2Keyboard {
                     },
                     None => {
                         assert!(guard.keyboard.scancode_buf_pos < guard.keyboard.scancode_buf.len());
-                    }
+                    },
                 }
             },
             Err(ps2::error::ControllerError::Timeout) => {},
             Err(err) => {
                 log!(Error, "ps2", "Error reading data from keyboard: {:?}", err);
-            }
+            },
         }
     }
 }
@@ -348,7 +348,7 @@ impl Keyboard for Ps2Keyboard {
 #[allow(dead_code)]
 struct Ps2MouseGuard<'a> {
     controller: UninterruptibleSpinlockGuard<'a, Ps2ControllerInternals>,
-    mouse: &'a mut Ps2MouseInternals
+    mouse: &'a mut Ps2MouseInternals,
 }
 
 #[allow(dead_code)]
@@ -369,7 +369,7 @@ struct Ps2MouseInternals {}
 #[allow(dead_code)]
 pub struct Ps2Mouse {
     internal: SharedUnsafeCell<Ps2MouseInternals>,
-    controller: DeviceRef<Ps2Controller>
+    controller: DeviceRef<Ps2Controller>,
 }
 
 #[allow(dead_code)]
@@ -382,7 +382,7 @@ impl Ps2Mouse {
         assert!(self.controller.dev().internal.is_guarded_by(&guard));
         Ps2MouseGuard {
             controller: guard,
-            mouse: unsafe { &mut *self.internal.get() }
+            mouse: unsafe { &mut *self.internal.get() },
         }
     }
 
@@ -391,7 +391,7 @@ impl Ps2Mouse {
             Ok(_) => {},
             Err(err) => {
                 log!(Error, "ps2", "Error reading data from mouse: {:?}", err);
-            }
+            },
         }
     }
 }
@@ -403,12 +403,12 @@ impl Device for Ps2Mouse {}
 struct Ps2ControllerInternals {
     controller: ps2::Controller,
     keyboard: Option<DeviceRef<Ps2Keyboard>>,
-    mouse: Option<DeviceRef<Ps2Mouse>>
+    mouse: Option<DeviceRef<Ps2Mouse>>,
 }
 
 #[derive(Debug)]
 pub struct Ps2Controller {
-    internal: UninterruptibleSpinlock<Ps2ControllerInternals>
+    internal: UninterruptibleSpinlock<Ps2ControllerInternals>,
 }
 
 #[dyn_dyn_impl(DeviceHub)]
@@ -444,7 +444,7 @@ pub unsafe fn init() -> Option<DeviceRef<Ps2Controller>> {
             ps2::flags::ControllerConfigFlags::ENABLE_KEYBOARD_INTERRUPT
                 | ps2::flags::ControllerConfigFlags::ENABLE_MOUSE_INTERRUPT
                 | ps2::flags::ControllerConfigFlags::ENABLE_TRANSLATE,
-            false
+            false,
         );
         controller.write_config(config)?;
 
@@ -479,9 +479,9 @@ pub unsafe fn init() -> Option<DeviceRef<Ps2Controller>> {
                         log!(Error, "ps2", "Keyboard does not support scancode set 2");
                         controller.disable_keyboard()?;
                         false
-                    }
+                    },
                 }
-            }
+            },
         };
 
         let has_mouse = match controller.test_mouse() {
@@ -503,9 +503,9 @@ pub unsafe fn init() -> Option<DeviceRef<Ps2Controller>> {
 
                         controller.mouse().enable_data_reporting()?;
                         true
-                    }
+                    },
                 }
-            }
+            },
         };
 
         controller.write_config(config)?;
@@ -514,8 +514,8 @@ pub unsafe fn init() -> Option<DeviceRef<Ps2Controller>> {
             internal: UninterruptibleSpinlock::new(Ps2ControllerInternals {
                 controller,
                 keyboard: None,
-                mouse: None
-            })
+                mouse: None,
+            }),
         }));
 
         let keyboard = if has_keyboard {
@@ -531,10 +531,10 @@ pub unsafe fn init() -> Option<DeviceRef<Ps2Controller>> {
                         scancode_buf: [0; 5],
                         scancode_buf_pos: 0,
                         scancode_map: &scancode_2_map::MAP,
-                        keycode_map: KeycodeMap::fallback()
-                    })
+                        keycode_map: KeycodeMap::fallback(),
+                    }),
                 })
-                .connect(DeviceRef::<Ps2Controller>::downgrade(&controller))
+                .connect(DeviceRef::<Ps2Controller>::downgrade(&controller)),
             )
         } else {
             None
@@ -551,9 +551,9 @@ pub unsafe fn init() -> Option<DeviceRef<Ps2Controller>> {
             Some(
                 DeviceNode::new(Box::from("mouse"), Ps2Mouse {
                     controller: controller.clone(),
-                    internal: SharedUnsafeCell::new(Ps2MouseInternals {})
+                    internal: SharedUnsafeCell::new(Ps2MouseInternals {}),
                 })
-                .connect(DeviceRef::<Ps2Controller>::downgrade(&controller))
+                .connect(DeviceRef::<Ps2Controller>::downgrade(&controller)),
             )
         } else {
             None
@@ -577,7 +577,7 @@ pub unsafe fn init() -> Option<DeviceRef<Ps2Controller>> {
                         log!(Warning, "ps2", "Received keyboard interrupt with no keyboard attached?");
                         let _ = internal.controller.read_data();
                     }
-                })
+                }),
             );
 
             pic::set_irq_masked(1, false);
@@ -596,7 +596,7 @@ pub unsafe fn init() -> Option<DeviceRef<Ps2Controller>> {
                         log!(Warning, "ps2", "Received mouse interrupt with no mouse attached?");
                         let _ = internal.controller.read_data();
                     }
-                })
+                }),
             );
             pic::set_irq_masked(12, false);
         }
@@ -624,12 +624,12 @@ pub unsafe fn init() -> Option<DeviceRef<Ps2Controller>> {
                     ps2::flags::ControllerConfigFlags::ENABLE_KEYBOARD_INTERRUPT
                         | ps2::flags::ControllerConfigFlags::ENABLE_MOUSE_INTERRUPT
                         | ps2::flags::ControllerConfigFlags::ENABLE_TRANSLATE,
-                    false
+                    false,
                 );
                 controller.write_config(config)?;
             };
 
             None
-        }
+        },
     }
 }

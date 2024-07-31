@@ -188,7 +188,7 @@ unsafe extern "C" fn handle_interrupt(frame: &mut InterruptFrame) {
                 log!(Warning, "kernel", "Unhandled irq{}", interrupt_num - IRQS_START);
             }
         },
-        _ => {}
+        _ => {},
     }
 
     if interrupt_num < IRQS_START {
@@ -282,7 +282,7 @@ pub struct InterruptFrame {
     pub cs: u64,
     pub rflags: u64,
     pub rsp: u64,
-    pub ss: u64
+    pub ss: u64,
 }
 
 impl InterruptFrame {
@@ -362,7 +362,7 @@ struct InterruptTableEntry {
     options: u16,
     offset_1: u16,
     offset_2: u32,
-    reserved: u32
+    reserved: u32,
 }
 
 impl InterruptTableEntry {
@@ -384,7 +384,7 @@ impl InterruptTableEntry {
         options: Self::OPTION_TYPE_INTERRUPT_GATE,
         offset_1: 0,
         offset_2: 0,
-        reserved: 0
+        reserved: 0,
     };
 
     fn new(ty: u16, dpl: PrivilegeLevel, ist: u16, f: Option<extern "C" fn()>) -> InterruptTableEntry {
@@ -436,7 +436,7 @@ impl InterruptTableEntry {
 
 #[repr(C, align(16))]
 struct InterruptTable {
-    entries: [InterruptTableEntry; InterruptTable::NUM_ENTRIES]
+    entries: [InterruptTableEntry; InterruptTable::NUM_ENTRIES],
 }
 
 impl InterruptTable {
@@ -444,14 +444,14 @@ impl InterruptTable {
 
     const fn new() -> InterruptTable {
         InterruptTable {
-            entries: [InterruptTableEntry::EMPTY; InterruptTable::NUM_ENTRIES]
+            entries: [InterruptTableEntry::EMPTY; InterruptTable::NUM_ENTRIES],
         }
     }
 
     fn pointer(&self) -> DescriptorTablePointer {
         DescriptorTablePointer {
             base: VirtAddr::new(self as *const _ as u64),
-            limit: (mem::size_of::<Self>() - 1) as u16
+            limit: (mem::size_of::<Self>() - 1) as u16,
         }
     }
 }
@@ -522,7 +522,7 @@ pub(super) unsafe fn init_bsp() {
         begin_irq12,
         begin_irq13,
         begin_irq14,
-        begin_irq15
+        begin_irq15,
     ];
 
     for (i, f) in handlers.iter().copied().enumerate() {
@@ -533,13 +533,13 @@ pub(super) unsafe fn init_bsp() {
         InterruptTableEntry::OPTION_TYPE_TRAP_GATE,
         PrivilegeLevel::Ring0,
         0,
-        Some(begin_int30)
+        Some(begin_int30),
     );
     idt.entries[0x80] = InterruptTableEntry::new(
         InterruptTableEntry::OPTION_TYPE_TRAP_GATE,
         PrivilegeLevel::Ring3,
         0,
-        Some(begin_int80)
+        Some(begin_int80),
     );
 
     let idt = IDT.set(idt);

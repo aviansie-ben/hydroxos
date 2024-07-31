@@ -1,5 +1,4 @@
 max_width = 140
 group_imports = "StdExternalCrate"
-trailing_comma = "Never"
 match_block_trailing_comma = true
 overflow_delimited_expr = true

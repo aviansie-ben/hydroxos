@@ -15,7 +15,7 @@ use crate::util::DisplayAsDebug;
 pub(super) struct ThreadWaitState {
     prev: *const Thread,
     next: *const Thread,
-    valid: bool
+    valid: bool,
 }
 
 unsafe impl Send for ThreadWaitState {}
@@ -25,14 +25,14 @@ impl ThreadWaitState {
         ThreadWaitState {
             prev: ptr::null(),
             next: ptr::null(),
-            valid: false
+            valid: false,
         }
     }
 }
 
 struct ThreadWaitListInternal {
     head: *const Thread,
-    tail: *const Thread
+    tail: *const Thread,
 }
 
 unsafe impl Send for ThreadWaitListInternal {}
@@ -99,7 +99,7 @@ impl Drop for ThreadWaitDropGuard {
 pub struct ThreadWait<'a>(
     ManuallyDrop<ThreadLock<'static>>,
     ThreadWaitDropGuard,
-    PhantomData<&'a ThreadWaitList>
+    PhantomData<&'a ThreadWaitList>,
 );
 
 impl<'a> ThreadWait<'a> {
@@ -122,7 +122,7 @@ impl<'a> ThreadWait<'a> {
 
 /// A wait list onto which threads can enqueue themselves to be woken up later.
 pub struct ThreadWaitList {
-    internal: UninterruptibleSpinlock<ThreadWaitListInternal>
+    internal: UninterruptibleSpinlock<ThreadWaitListInternal>,
 }
 
 impl !Unpin for ThreadWaitList {}
@@ -133,8 +133,8 @@ impl ThreadWaitList {
         ThreadWaitList {
             internal: UninterruptibleSpinlock::new(ThreadWaitListInternal {
                 head: ptr::null(),
-                tail: ptr::null()
-            })
+                tail: ptr::null(),
+            }),
         }
     }
 
@@ -185,7 +185,7 @@ impl ThreadWaitList {
                     thread.thread().debug_name(),
                     state
                 );
-            }
+            },
         }
     }
 
@@ -263,7 +263,7 @@ impl fmt::Debug for ThreadWaitList {
             },
             None => {
                 write!(f, "ThreadWaitList [ <locked> ]")?;
-            }
+            },
         }
 
         Ok(())

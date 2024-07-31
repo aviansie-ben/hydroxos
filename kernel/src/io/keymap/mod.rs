@@ -114,7 +114,7 @@ pub enum CommonKeycode {
     Numpad6,
     Numpad7,
     Numpad8,
-    Numpad9
+    Numpad9,
 }
 
 impl CommonKeycode {
@@ -147,7 +147,7 @@ impl TryFrom<usize> for CommonKeycode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Keycode {
     Common(CommonKeycode),
-    DeviceSpecific(u16)
+    DeviceSpecific(u16),
 }
 
 impl TryFrom<usize> for Keycode {
@@ -167,7 +167,7 @@ pub enum KeyAction {
     None,
     Char(char),
     Str(&'static str),
-    String(String)
+    String(String),
 }
 
 impl From<char> for KeyAction {
@@ -193,13 +193,13 @@ pub enum KeycodeMapEntry {
     Simple(KeyAction),
     Shift(KeyAction, KeyAction),
     ShiftCaps(KeyAction, KeyAction),
-    NumLock(KeyAction, KeyAction)
+    NumLock(KeyAction, KeyAction),
 }
 
 #[derive(Debug)]
 pub struct KeycodeMap {
     name: &'static str,
-    common: [KeycodeMapEntry; CommonKeycode::NUM_KEYCODES]
+    common: [KeycodeMapEntry; CommonKeycode::NUM_KEYCODES],
 }
 
 impl KeycodeMap {
@@ -210,7 +210,7 @@ impl KeycodeMap {
     pub const fn new(name: &'static str) -> Self {
         Self {
             name,
-            common: [const { KeycodeMapEntry::Simple(KeyAction::None) }; CommonKeycode::NUM_KEYCODES]
+            common: [const { KeycodeMapEntry::Simple(KeyAction::None) }; CommonKeycode::NUM_KEYCODES],
         }
     }
 
@@ -223,7 +223,7 @@ impl KeycodeMap {
             },
             _ => {
                 panic!("keycode map entry already set");
-            }
+            },
         }
     }
 
@@ -261,7 +261,7 @@ impl KeycodeMap {
                     }
                 },
             },
-            Keycode::DeviceSpecific(_) => None
+            Keycode::DeviceSpecific(_) => None,
         }
     }
 }
@@ -269,6 +269,6 @@ impl KeycodeMap {
 pub fn get_keymap(name: &str) -> Option<&'static KeycodeMap> {
     match name {
         "qwerty-us" => Some(&qwerty_us::KEYMAP),
-        _ => None
+        _ => None,
     }
 }

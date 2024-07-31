@@ -8,7 +8,7 @@ use crate::sched::task::Process;
 use crate::util::ArrayDeque;
 
 struct CommandHistory {
-    buf: ArrayDeque<String, 64>
+    buf: ArrayDeque<String, 64>,
 }
 
 fn readline<T: Tty + ?Sized>(r: &mut TtyCharReader<T>, w: &mut TtyWriter<T>, history: &mut CommandHistory) -> Result<String, String> {
@@ -100,9 +100,9 @@ fn readline<T: Tty + ?Sized>(r: &mut TtyCharReader<T>, w: &mut TtyWriter<T>, his
                             i -= 1;
                         }
                     },
-                    _ => {}
+                    _ => {},
                 },
-                _ => {}
+                _ => {},
             },
             Ok('\x00'..='\x1f') => {},
             Ok(ch) => {
@@ -124,7 +124,7 @@ fn readline<T: Tty + ?Sized>(r: &mut TtyCharReader<T>, w: &mut TtyWriter<T>, his
             },
             Err(_) => {
                 return Err(s);
-            }
+            },
         }
     }
 }
@@ -170,7 +170,7 @@ fn run_dev_cmd<T: Tty + ?Sized>(w: &mut TtyWriter<T>, args: &[&str]) -> Result<(
             }
 
             writeln!(w, "run 'help dev' for more information")?;
-        }
+        },
     }
 
     Ok(())
@@ -211,7 +211,7 @@ fn run_proc_cmd<T: Tty + ?Sized>(w: &mut TtyWriter<T>, args: &[&str]) -> Result<
             }
 
             writeln!(w, "run 'help proc' for more information")?;
-        }
+        },
     }
 
     Ok(())
@@ -245,11 +245,11 @@ fn run_debug_console_command<T: Tty + ?Sized>(w: &mut TtyWriter<T>, cmd: &[&str]
             },
             Some(cmd) => {
                 writeln!(w, "unknown command '{}'", cmd)?;
-            }
+            },
         },
         _ => {
             writeln!(w, "unknown command '{}'", cmd[0])?;
-        }
+        },
     }
 
     Ok(())
@@ -308,7 +308,7 @@ pub fn show_debug_console<T: Tty + ?Sized>(tty: &T) {
                 },
                 Err((_, msg)) => {
                     let _ = writeln!(w, "parse error: {}", msg);
-                }
+                },
             }
         } else {
             let _ = writeln!(w);

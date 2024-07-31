@@ -14,7 +14,7 @@ enum MutexLockState {
     Unlocked,
     LockedNoWaiters(NonNull<Thread>),
     LockedWithWaiters(NonNull<Thread>),
-    LockedWaitersLocked(NonNull<Thread>)
+    LockedWaitersLocked(NonNull<Thread>),
 }
 
 impl MutexLockState {
@@ -35,7 +35,7 @@ impl MutexLockState {
             MutexLockState::Unlocked => 0,
             MutexLockState::LockedNoWaiters(thread) => thread.as_ptr() as usize,
             MutexLockState::LockedWithWaiters(thread) => (thread.as_ptr() as usize) | 1,
-            MutexLockState::LockedWaitersLocked(thread) => (thread.as_ptr() as usize) | 3
+            MutexLockState::LockedWaitersLocked(thread) => (thread.as_ptr() as usize) | 3,
         }
     }
 
@@ -44,21 +44,21 @@ impl MutexLockState {
             MutexLockState::Unlocked => None,
             MutexLockState::LockedNoWaiters(owner) => Some(owner),
             MutexLockState::LockedWithWaiters(owner) => Some(owner),
-            MutexLockState::LockedWaitersLocked(owner) => Some(owner)
+            MutexLockState::LockedWaitersLocked(owner) => Some(owner),
         }
     }
 }
 
 struct MutexLock {
     state: AtomicUsize,
-    wait: ThreadWaitList
+    wait: ThreadWaitList,
 }
 
 impl MutexLock {
     const fn new() -> MutexLock {
         MutexLock {
             state: AtomicUsize::new(0),
-            wait: ThreadWaitList::new()
+            wait: ThreadWaitList::new(),
         }
     }
 
@@ -73,7 +73,7 @@ impl MutexLock {
                 MutexLockState::Unlocked.into_usize(),
                 MutexLockState::LockedNoWaiters(NonNull::from(&**thread)).into_usize(),
                 Ordering::Acquire,
-                Ordering::Relaxed
+                Ordering::Relaxed,
             )
             .map(|_| ())
     }
@@ -91,7 +91,7 @@ impl MutexLock {
                     },
                     Err(new_state) => {
                         state = new_state;
-                    }
+                    },
                 },
                 old_state @ MutexLockState::LockedNoWaiters(owner) | old_state @ MutexLockState::LockedWithWaiters(owner) => {
                     let interrupt_disabler = InterruptDisabler::new();
@@ -102,7 +102,7 @@ impl MutexLock {
                             old_state.into_usize(),
                             MutexLockState::LockedWaitersLocked(owner).into_usize(),
                             Ordering::Acquire,
-                            Ordering::Relaxed
+                            Ordering::Relaxed,
                         )
                         .map_err(MutexLockState::from_usize)
                     {
@@ -115,7 +115,7 @@ impl MutexLock {
                                     MutexLockState::LockedWaitersLocked(owner).into_usize(),
                                     MutexLockState::LockedWithWaiters(owner).into_usize(),
                                     Ordering::Acquire,
-                                    Ordering::Relaxed
+                                    Ordering::Relaxed,
                                 )
                                 .map_err(MutexLockState::from_usize)
                             {
@@ -125,7 +125,7 @@ impl MutexLock {
                                     MutexLockState::LockedWaitersLocked(owner),
                                     state,
                                     thread.debug_name()
-                                )
+                                ),
                             }
 
                             drop(interrupt_disabler);
@@ -140,7 +140,7 @@ impl MutexLock {
                         },
                         Err(new_state) => {
                             state = new_state;
-                        }
+                        },
                     }
                 },
                 MutexLockState::LockedWaitersLocked(_) => {
@@ -160,7 +160,7 @@ impl MutexLock {
             Ok(()) => {},
             Err(state) => {
                 self.acquire_slow(&thread, state);
-            }
+            },
         }
     }
 
@@ -184,7 +184,7 @@ impl MutexLock {
                             MutexLockState::LockedWithWaiters(lock_thread).into_usize(),
                             MutexLockState::LockedWaitersLocked(lock_thread).into_usize(),
                             Ordering::Acquire,
-                            Ordering::Relaxed
+                            Ordering::Relaxed,
                         )
                         .map_err(MutexLockState::from_usize)
                     {
@@ -200,7 +200,7 @@ impl MutexLock {
                         },
                         Err(new_state) => {
                             state = new_state;
-                        }
+                        },
                     }
                 },
                 MutexLockState::LockedWaitersLocked(lock_thread) if lock_thread == NonNull::from(&**thread) => {
@@ -215,7 +215,7 @@ impl MutexLock {
                         state,
                         thread.debug_name()
                     );
-                }
+                },
             }
         }
     }
@@ -227,26 +227,26 @@ impl MutexLock {
             MutexLockState::LockedNoWaiters(NonNull::from(&*thread)).into_usize(),
             MutexLockState::Unlocked.into_usize(),
             Ordering::Release,
-            Ordering::Relaxed
+            Ordering::Relaxed,
         ) {
             Ok(_) => {},
             Err(state) => {
                 self.release_slow(&thread, state);
-            }
+            },
         }
     }
 }
 
 pub struct Mutex<T: Send> {
     data: UnsafeCell<T>,
-    lock: MutexLock
+    lock: MutexLock,
 }
 
 impl<T: Send> Mutex<T> {
     pub const fn new(val: T) -> Mutex<T> {
         Mutex {
             data: UnsafeCell::new(val),
-            lock: MutexLock::new()
+            lock: MutexLock::new(),
         }
     }
 
@@ -254,7 +254,7 @@ impl<T: Send> Mutex<T> {
         self.lock.acquire();
         MutexGuard {
             data: unsafe { &mut *self.data.get() },
-            lock: &self.lock
+            lock: &self.lock,
         }
     }
 
@@ -262,7 +262,7 @@ impl<T: Send> Mutex<T> {
         if self.lock.try_acquire() {
             Some(MutexGuard {
                 data: unsafe { &mut *self.data.get() },
-                lock: &self.lock
+                lock: &self.lock,
             })
         } else {
             None
@@ -276,7 +276,7 @@ impl<T: Send> Mutex<T> {
     pub fn is_locked(&self) -> bool {
         match self.lock.get_state() {
             MutexLockState::Unlocked => false,
-            _ => true
+            _ => true,
         }
     }
 }
@@ -286,7 +286,7 @@ unsafe impl<T: Send> Send for Mutex<T> {}
 
 pub struct MutexGuard<'a, T: Send> {
     data: &'a mut T,
-    lock: &'a MutexLock
+    lock: &'a MutexLock,
 }
 
 impl<'a, T: Send> Deref for MutexGuard<'a, T> {
@@ -354,7 +354,7 @@ mod test {
                     assert!(!mutex.is_locked());
                     assert_eq!(3, *mutex.lock());
                 },
-                4096
+                4096,
             )
         };
 

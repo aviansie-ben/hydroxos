@@ -38,7 +38,7 @@ impl Tty for TestLogTty {
 
                 serial.dev().write_blocking(bytes.as_ref().unwrap())?;
                 ()
-            }
+            },
         )
     }
 

@@ -14,7 +14,7 @@ use crate::frame_alloc::FrameAllocator;
 enum VirtualAllocSplitIndex {
     Prev(usize),
     This(usize),
-    Next(usize)
+    Next(usize),
 }
 
 /// A region of virtual memory as used by the allocator.
@@ -63,7 +63,7 @@ impl VirtualAllocRegion {
 struct VirtualAllocPageHeader {
     prev: *mut VirtualAllocPage,
     next: *mut VirtualAllocPage,
-    len: u16
+    len: u16,
 }
 
 impl VirtualAllocPageHeader {
@@ -86,7 +86,7 @@ impl VirtualAllocPageHeader {
 
 struct VirtualAllocPage {
     header: VirtualAllocPageHeader,
-    regions: [VirtualAllocRegion; VirtualAllocPage::REGIONS_PER_PAGE]
+    regions: [VirtualAllocRegion; VirtualAllocPage::REGIONS_PER_PAGE],
 }
 
 impl VirtualAllocPage {
@@ -106,9 +106,9 @@ impl VirtualAllocPage {
                 header: VirtualAllocPageHeader {
                     prev: ptr::null_mut(),
                     next: ptr::null_mut(),
-                    len: 0
+                    len: 0,
                 },
-                regions: [VirtualAllocRegion::empty(); VirtualAllocPage::REGIONS_PER_PAGE]
+                regions: [VirtualAllocRegion::empty(); VirtualAllocPage::REGIONS_PER_PAGE],
             };
         }
 
@@ -193,7 +193,7 @@ impl VirtualAllocPage {
             Err(0) if self.header.is_empty() => (None, None),
             Err(0) => (None, Some(0)),
             Err(idx) if idx == self.header.len() => (Some(idx - 1), None),
-            Err(idx) => (Some(idx - 1), Some(idx))
+            Err(idx) => (Some(idx - 1), Some(idx)),
         };
 
         let already_free = unsafe {
@@ -239,7 +239,7 @@ impl VirtualAllocPage {
 /// internal purposes. This allows these allocators to be used to allocate regions in a memory space that does not represent the currently
 /// active address space, e.g. for processes other than the currently running process.
 pub struct VirtualAllocator {
-    head: *mut VirtualAllocPage
+    head: *mut VirtualAllocPage,
 }
 
 impl VirtualAllocator {
@@ -390,7 +390,7 @@ impl VirtualAllocator {
                     match page.split(idx) {
                         VirtualAllocSplitIndex::Prev(idx) => (&mut *page.header.prev, idx),
                         VirtualAllocSplitIndex::This(idx) => (page, idx),
-                        VirtualAllocSplitIndex::Next(idx) => (&mut *page.header.next, idx)
+                        VirtualAllocSplitIndex::Next(idx) => (&mut *page.header.next, idx),
                     }
                 } else {
                     (page, idx)
@@ -398,7 +398,7 @@ impl VirtualAllocator {
 
                 page.insert_region(region, idx);
                 (page, idx)
-            }
+            },
         };
 
         let coalesced = if idx == 0 && !(*page).header.prev.is_null() {
@@ -438,7 +438,7 @@ impl VirtualAllocator {
                             (*page).regions[idx].0 += size;
                             return Some(VirtualAllocRegion(region.0, region.0 + size));
                         },
-                        Ordering::Less => {}
+                        Ordering::Less => {},
                     }
                 }
 
@@ -471,7 +471,7 @@ impl VirtualAllocator {
                     } else if region.start() < range.end() {
                         let idx = match (*page).valid_regions().binary_search_by_key(&region.start(), |r| r.start()) {
                             Ok(idx) => idx,
-                            Err(idx) => idx - 1
+                            Err(idx) => idx - 1,
                         };
 
                         let match_region = (*page).regions[idx];
@@ -519,7 +519,7 @@ impl VirtualAllocator {
                                             VirtualAllocSplitIndex::Next(idx) => {
                                                 page = (*page).header.next;
                                                 idx
-                                            }
+                                            },
                                         }
                                     } else {
                                         idx
@@ -527,7 +527,7 @@ impl VirtualAllocator {
 
                                     (*page).regions[idx].1 = region.start();
                                     (*page).insert_region(VirtualAllocRegion::new(region.end(), match_region.end()), idx + 1);
-                                }
+                                },
                             }
 
                             return true;
@@ -559,7 +559,7 @@ impl VirtualAllocator {
                     self.head.as_ref()
                 }
             },
-            0
+            0,
         )
     }
 }

@@ -5,7 +5,7 @@ struct GdtConst {
     kernel_cs: SegmentSelector,
     kernel_ds: SegmentSelector,
     user_cs: SegmentSelector,
-    user_ds: SegmentSelector
+    user_ds: SegmentSelector,
 }
 
 impl GdtConst {
@@ -22,7 +22,7 @@ impl GdtConst {
             kernel_cs,
             kernel_ds,
             user_cs,
-            user_ds
+            user_ds,
         }
     }
 }

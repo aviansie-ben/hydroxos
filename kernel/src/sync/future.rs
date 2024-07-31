@@ -22,26 +22,26 @@ struct FutureWaitGenericState {
     wait_refs: usize,
     val_refs: usize,
     resolved: bool,
-    actions: Vec<Box<FutureWaitAction>>
+    actions: Vec<Box<FutureWaitAction>>,
 }
 
 struct FutureWaitGeneric {
     state: UninterruptibleSpinlock<FutureWaitGenericState>,
-    wait: ThreadWaitList
+    wait: ThreadWaitList,
 }
 
 impl FutureWaitGeneric {
     pub fn lock(&self) -> FutureWaitGenericLock {
         FutureWaitGenericLock {
             state: self.state.lock(),
-            wait: &self.wait
+            wait: &self.wait,
         }
     }
 }
 
 struct FutureWaitGenericLock<'a> {
     state: UninterruptibleSpinlockGuard<'a, FutureWaitGenericState>,
-    wait: &'a ThreadWaitList
+    wait: &'a ThreadWaitList,
 }
 
 impl<'a> FutureWaitGenericLock<'a> {
@@ -59,7 +59,7 @@ impl<'a> FutureWaitGenericLock<'a> {
 #[repr(C)]
 pub struct FutureWait<T> {
     generic: FutureWaitGeneric,
-    val: UnsafeCell<MaybeUninit<T>>
+    val: UnsafeCell<MaybeUninit<T>>,
 }
 
 impl<T> FutureWait<T> {
@@ -70,11 +70,11 @@ impl<T> FutureWait<T> {
                     wait_refs,
                     val_refs,
                     resolved: false,
-                    actions: vec![]
+                    actions: vec![],
                 }),
-                wait: ThreadWaitList::new()
+                wait: ThreadWaitList::new(),
             },
-            val: UnsafeCell::new(MaybeUninit::uninit())
+            val: UnsafeCell::new(MaybeUninit::uninit()),
         }))
     }
 
@@ -109,7 +109,7 @@ impl<T> FutureWait<T> {
 #[derive(Debug)]
 enum FutureInternalUnresolved<T> {
     WithVal(*const FutureWait<T>),
-    WithoutVal(*const FutureWaitGeneric, fn(*const FutureWaitGeneric))
+    WithoutVal(*const FutureWaitGeneric, fn(*const FutureWaitGeneric)),
 }
 
 unsafe impl<T: Send> Send for FutureInternalUnresolved<T> {}
@@ -123,20 +123,20 @@ impl<T> FutureInternalUnresolved<T> {
             },
             FutureInternalUnresolved::WithoutVal(ptr, free) => {
                 Future::dec_wait_ref_generic(ptr, free, wait);
-            }
+            },
         }
     }
 
     unsafe fn try_resolve(mut self) -> Result<T, (FutureInternalUnresolved<T>, FutureWaitGenericLock<'static>)> {
         let mut lock = match self {
             FutureInternalUnresolved::WithVal(ptr) => unsafe { (*ptr).generic.lock() },
-            FutureInternalUnresolved::WithoutVal(ptr, _) => unsafe { (*ptr).lock() }
+            FutureInternalUnresolved::WithoutVal(ptr, _) => unsafe { (*ptr).lock() },
         };
 
         if lock.state.resolved {
             let val = match self {
                 FutureInternalUnresolved::WithVal(ptr) => unsafe { (*ptr).take_val(&mut lock) },
-                FutureInternalUnresolved::WithoutVal(_, _) => crate::util::unit_or_panic()
+                FutureInternalUnresolved::WithoutVal(_, _) => crate::util::unit_or_panic(),
             };
 
             self.dec_wait_ref(lock);
@@ -152,7 +152,7 @@ impl<T> Drop for FutureInternalUnresolved<T> {
     fn drop(&mut self) {
         let mut lock = match *self {
             FutureInternalUnresolved::WithVal(ptr) => unsafe { (*ptr).generic.lock() },
-            FutureInternalUnresolved::WithoutVal(ptr, _) => unsafe { (*ptr).lock() }
+            FutureInternalUnresolved::WithoutVal(ptr, _) => unsafe { (*ptr).lock() },
         };
 
         if let FutureInternalUnresolved::WithVal(ptr) = *self {
@@ -171,7 +171,7 @@ impl<T> Drop for FutureInternalUnresolved<T> {
 enum FutureInternal<T> {
     Unresolved(FutureInternalUnresolved<T>),
     Done(T),
-    Invalid
+    Invalid,
 }
 
 impl<T> FutureInternal<T> {
@@ -185,7 +185,7 @@ impl<T> FutureInternal<T> {
                 Err((unresolved, lock)) => {
                     *self = FutureInternal::Unresolved(unresolved);
                     Some(lock)
-                }
+                },
             },
             FutureInternal::Done(val) => {
                 *self = FutureInternal::Done(val);
@@ -193,7 +193,7 @@ impl<T> FutureInternal<T> {
             },
             FutureInternal::Invalid => {
                 panic!("future is in invalid state");
-            }
+            },
         }
     }
 }
@@ -223,7 +223,7 @@ impl<T: Send + Sync + Clone> Clone for FutureInternal<T> {
                 }
             },
             FutureInternal::Done(ref val) => FutureInternal::Done(val.clone()),
-            FutureInternal::Invalid => FutureInternal::Invalid
+            FutureInternal::Invalid => FutureInternal::Invalid,
         }
     }
 }
@@ -254,7 +254,7 @@ impl<T> Future<T> {
 
         (
             Future(FutureInternal::Unresolved(FutureInternalUnresolved::WithVal(wait))),
-            FutureWriter { wait, _data: PhantomData }
+            FutureWriter { wait, _data: PhantomData },
         )
     }
 
@@ -271,9 +271,9 @@ impl<T> Future<T> {
                 drop(s);
                 f(Ok(match self.0 {
                     FutureInternal::Done(ref mut val) => val,
-                    _ => unreachable!()
+                    _ => unreachable!(),
                 }))
-            }
+            },
         }
     }
 
@@ -291,7 +291,7 @@ impl<T> Future<T> {
                 Err(wait) => {
                     wait.wait();
                     false
-                }
+                },
             });
 
             if done {
@@ -315,7 +315,7 @@ impl<T> Future<T> {
         match self.0 {
             FutureInternal::Unresolved(_) => false,
             FutureInternal::Done(_) => true,
-            FutureInternal::Invalid => unreachable!()
+            FutureInternal::Invalid => unreachable!(),
         }
     }
 
@@ -335,7 +335,7 @@ impl<T> Future<T> {
                 mem::forget(self);
                 val
             },
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -351,7 +351,7 @@ impl<T> Future<T> {
         match self.0 {
             FutureInternal::Unresolved(unresolved) => Err(Future(FutureInternal::Unresolved(unresolved))),
             FutureInternal::Done(val) => Ok(val),
-            FutureInternal::Invalid => unreachable!()
+            FutureInternal::Invalid => unreachable!(),
         }
     }
 
@@ -390,13 +390,13 @@ impl<T> Future<T> {
 
                         lock.state.wait_refs -= 1;
                         mem::forget(unresolved);
-                    }
+                    },
                 }
             },
             FutureInternal::Done(val) => {
                 f(val);
             },
-            FutureInternal::Invalid => unreachable!()
+            FutureInternal::Invalid => unreachable!(),
         }
     }
 
@@ -415,7 +415,7 @@ impl<T> Future<T> {
                     assert_eq!(generic_ptr as *const (), ptr as *const ());
                     Future(FutureInternal::Unresolved(FutureInternalUnresolved::WithoutVal(
                         generic_ptr,
-                        |ptr| FutureWait::destroy(ptr as *const FutureWait<T>)
+                        |ptr| FutureWait::destroy(ptr as *const FutureWait<T>),
                     )))
                 }
             },
@@ -424,7 +424,7 @@ impl<T> Future<T> {
                 Future(FutureInternal::Unresolved(FutureInternalUnresolved::WithoutVal(ptr, free)))
             },
             FutureInternal::Done(_) => Future::done(()),
-            FutureInternal::Invalid => unreachable!()
+            FutureInternal::Invalid => unreachable!(),
         }
     }
 
@@ -561,7 +561,7 @@ impl<T: fmt::Debug> fmt::Debug for Future<T> {
             },
             FutureInternal::Invalid => {
                 write!(f, "Future@INVALID")
-            }
+            },
         }
     }
 }
@@ -581,7 +581,7 @@ impl<T: Send + Sync + Clone> Clone for Future<T> {
 #[must_use]
 pub struct FutureWriter<T> {
     wait: *const FutureWait<T>,
-    _data: PhantomData<FutureWait<T>>
+    _data: PhantomData<FutureWait<T>>,
 }
 
 impl<T> FutureWriter<T> {
@@ -611,7 +611,7 @@ impl<T> FutureWriter<T> {
     pub fn new() -> FutureWriter<T> {
         FutureWriter {
             wait: FutureWait::new(1, 0),
-            _data: PhantomData
+            _data: PhantomData,
         }
     }
 
@@ -637,7 +637,7 @@ impl<T> FutureWriter<T> {
     pub unsafe fn from_raw(ptr: *const FutureWait<T>) -> FutureWriter<T> {
         FutureWriter {
             wait: ptr,
-            _data: PhantomData
+            _data: PhantomData,
         }
     }
 }
@@ -714,7 +714,7 @@ mod test {
             Err(future) => future,
             Ok(val) => {
                 panic!("Future was resolved with {:?} early", val);
-            }
+            },
         };
 
         writer.finish(0xdead);
@@ -728,7 +728,7 @@ mod test {
             Err(future) => future,
             Ok(val) => {
                 panic!("Future was resolved with {:?} early", val);
-            }
+            },
         };
 
         writer.finish(0xdead);
@@ -736,7 +736,7 @@ mod test {
             Err(future) => future,
             Ok(val) => {
                 panic!("Future was resolved with {:?} early", val);
-            }
+            },
         };
 
         future.update_readiness();

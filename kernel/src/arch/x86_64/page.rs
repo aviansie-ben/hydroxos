@@ -75,14 +75,14 @@ impl<'a, T: FrameAllocator> FrameDeallocator<Size4KiB> for PhysFrameDeallocator<
 
 pub struct AddressSpace {
     page_table: PhysAddr,
-    virtual_alloc: VirtualAllocator
+    virtual_alloc: VirtualAllocator,
 }
 
 impl AddressSpace {
     pub(super) const unsafe fn from_page_table(page_table: PhysAddr) -> AddressSpace {
         AddressSpace {
             page_table,
-            virtual_alloc: VirtualAllocator::new()
+            virtual_alloc: VirtualAllocator::new(),
         }
     }
 
@@ -118,7 +118,7 @@ impl AddressSpace {
 
             addrspace.virtual_alloc.free(VirtualAllocRegion::new(
                 VirtAddr::new(PAGE_SIZE as u64),
-                VirtAddr::new(0x00007ffffffff000)
+                VirtAddr::new(0x00007ffffffff000),
             ));
 
             addrspace
@@ -143,7 +143,7 @@ impl AddressSpace {
                         0..512,
                         start_addr,
                         level - 1,
-                        out
+                        out,
                     );
                 }
             }
@@ -154,7 +154,7 @@ impl AddressSpace {
             256..511,
             VirtAddr::new(0xffff800000000000),
             4,
-            &mut self.virtual_alloc
+            &mut self.virtual_alloc,
         );
     }
 
@@ -166,7 +166,7 @@ impl AddressSpace {
         unsafe {
             MappedPageTable::new(
                 &mut *(get_phys_mem_ptr(self.page_table).ptr() as *mut PageTable),
-                PhysPageTableFrameMapping
+                PhysPageTableFrameMapping,
             )
         }
     }
@@ -202,7 +202,7 @@ pub(super) unsafe fn init_kernel_addrspace() {
                 ptr::write_bytes(
                     get_phys_mem_ptr_slice(kl3_table, PAGE_SIZE).ptr().get_unchecked_mut(0) as *mut u8,
                     0,
-                    PAGE_SIZE
+                    PAGE_SIZE,
                 );
 
                 kl4_table.level_4_table()[i].set_addr(kl3_table, PageTableFlags::PRESENT | PageTableFlags::WRITABLE);

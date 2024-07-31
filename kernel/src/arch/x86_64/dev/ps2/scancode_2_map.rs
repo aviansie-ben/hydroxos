@@ -260,7 +260,7 @@ pub const MAP: ScancodeMap = ScancodeMap {
         None,
         None,
         None,
-        None
+        None,
     ],
     extended: [
         None,
@@ -518,7 +518,7 @@ pub const MAP: ScancodeMap = ScancodeMap {
         None,
         None,
         None,
-        None
+        None,
     ],
-    dual_extended: ScancodeMapDualList::Static(&DUAL_LIST)
+    dual_extended: ScancodeMapDualList::Static(&DUAL_LIST),
 };

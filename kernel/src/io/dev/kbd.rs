@@ -3,14 +3,14 @@ use alloc::string::String;
 use super::Device;
 use crate::{
     io::keymap::{CommonKeycode, Keycode, KeycodeMap},
-    sync::{uninterruptible::UninterruptibleSpinlockReadGuard, Future}
+    sync::{uninterruptible::UninterruptibleSpinlockReadGuard, Future},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KeyboardLockState {
     pub scroll_lock: bool,
     pub num_lock: bool,
-    pub caps_lock: bool
+    pub caps_lock: bool,
 }
 
 impl KeyboardLockState {
@@ -18,7 +18,7 @@ impl KeyboardLockState {
         KeyboardLockState {
             scroll_lock: false,
             num_lock: false,
-            caps_lock: false
+            caps_lock: false,
         }
     }
 
@@ -36,7 +36,7 @@ impl KeyboardLockState {
                 self.caps_lock = !self.caps_lock;
                 true
             },
-            _ => false
+            _ => false,
         }
     }
 }
@@ -50,7 +50,7 @@ pub struct ModifierState {
     pub left_shift: bool,
     pub right_shift: bool,
     pub left_super_key: bool,
-    pub right_super_key: bool
+    pub right_super_key: bool,
 }
 
 impl ModifierState {
@@ -63,7 +63,7 @@ impl ModifierState {
             left_shift: false,
             right_shift: false,
             left_super_key: false,
-            right_super_key: false
+            right_super_key: false,
         }
     }
 
@@ -117,7 +117,7 @@ impl ModifierState {
                 self.right_super_key = pressed;
                 true
             },
-            _ => false
+            _ => false,
         }
     }
 }
@@ -128,7 +128,7 @@ pub struct KeyPress {
     pub lock_state: KeyboardLockState,
     pub mods: ModifierState,
     // TODO: Not great that we always need to alloc here
-    pub str: String
+    pub str: String,
 }
 
 pub trait KeyboardHeldKeys {

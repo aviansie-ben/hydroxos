@@ -413,7 +413,7 @@ impl<T: ?Sized> fmt::Debug for UninterruptibleSpinlock<T> {
             },
             None => {
                 write!(f, "<locked>")?;
-            }
+            },
         }
 
         write!(f, ")")
@@ -429,7 +429,7 @@ impl<'a, T: ?Sized + 'a> UninterruptibleSpinlockGuard<'a, T> {
     /// returns the newly mapped data when dereferenced.
     pub fn map<U: ?Sized, Guard>(guard: Guard, f: impl FnOnce(&mut T) -> &mut U) -> UninterruptibleSpinlockGuard<'a, U>
     where
-        Self: From<Guard>
+        Self: From<Guard>,
     {
         let Self(guard, data, interrupt_disabler) = Self::from(guard);
 
@@ -442,7 +442,7 @@ impl<'a, T: ?Sized + 'a> UninterruptibleSpinlockGuard<'a, T> {
     pub fn replace_data<'b, U: ?Sized, Guard>(guard: Guard, data: &'b mut U) -> UninterruptibleSpinlockGuard<'b, U>
     where
         'a: 'b,
-        Self: From<Guard>
+        Self: From<Guard>,
     {
         let Self(guard, _, interrupt_disabler) = Self::from(guard);
 
@@ -485,7 +485,7 @@ impl<'a, T: ?Sized + 'a> UninterruptibleSpinlockReadGuard<'a, T> {
     /// returns the newly mapped data when dereferenced.
     pub fn map<U: ?Sized, Guard>(guard: Guard, f: impl FnOnce(&T) -> &U) -> UninterruptibleSpinlockReadGuard<'a, U>
     where
-        Self: From<Guard>
+        Self: From<Guard>,
     {
         let Self(guard, data, interrupt_disabler) = Self::from(guard);
 

@@ -101,7 +101,7 @@ impl<T: ?Sized> Debug for DeviceWeak<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0.upgrade() {
             Some(val) => write!(f, "DeviceWeak({})", val.full_name()),
-            None => write!(f, "DeviceWeak(<freed>)")
+            None => write!(f, "DeviceWeak(<freed>)"),
         }
     }
 }
@@ -119,7 +119,7 @@ pub trait Device: Send + Sync + Debug + 'static {
 
     unsafe fn on_connected(&self, _own_ref: &DeviceRef<Self>)
     where
-        Self: Sized
+        Self: Sized,
     {
     }
 
@@ -137,7 +137,7 @@ pub struct DeviceNode<T: ?Sized> {
     parent: DeviceWeak<dyn Device>,
     name: Box<str>,
     disconnect_event: UninterruptibleSpinlock<Option<FutureWriter<()>>>,
-    dev: T
+    dev: T,
 }
 
 impl<T: Device> DeviceNode<T> {
@@ -146,7 +146,7 @@ impl<T: Device> DeviceNode<T> {
             parent: <DeviceWeak<DummyDevice>>::new(),
             name,
             disconnect_event: UninterruptibleSpinlock::new(None),
-            dev
+            dev,
         }
     }
 
@@ -283,7 +283,7 @@ fn print_device_tree_internal<E>(root: &DeviceRef<dyn Device>, mut f: impl FnMut
         f: &mut impl FnMut(&str) -> Result<(), E>,
         line: &mut String,
         dev: &DeviceRef<dyn Device>,
-        indent: u32
+        indent: u32,
     ) -> Result<(), E> {
         use core::fmt::Write;
 
@@ -314,7 +314,7 @@ fn print_device_tree_internal<E>(root: &DeviceRef<dyn Device>, mut f: impl FnMut
 
             Some(match result {
                 Ok(_) => Ok(children),
-                Err(e) => Err(e)
+                Err(e) => Err(e),
             })
         } else {
             None
@@ -361,7 +361,7 @@ fn print_device_tree_internal<E>(root: &DeviceRef<dyn Device>, mut f: impl FnMut
 
                 f(line)?;
             },
-            None => {}
+            None => {},
         }
 
         Ok(())

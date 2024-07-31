@@ -168,7 +168,7 @@ impl<T: fmt::Display> fmt::Debug for DisplayAsDebug<T> {
 pub struct ArrayDeque<T, const N: usize> {
     head: usize,
     len: usize,
-    data: [MaybeUninit<T>; N]
+    data: [MaybeUninit<T>; N],
 }
 
 impl<T, const N: usize> ArrayDeque<T, N> {
@@ -176,7 +176,7 @@ impl<T, const N: usize> ArrayDeque<T, N> {
         Self {
             head: 0,
             len: 0,
-            data: MaybeUninit::uninit_array()
+            data: MaybeUninit::uninit_array(),
         }
     }
 
@@ -415,21 +415,21 @@ pub struct OneShotManualInit<T> {
     // 1: Initialization started, but not completed
     // 2: Initialized
     state: AtomicU8,
-    val: SharedUnsafeCell<MaybeUninit<T>>
+    val: SharedUnsafeCell<MaybeUninit<T>>,
 }
 
 impl<T> OneShotManualInit<T> {
     pub const fn uninit() -> Self {
         Self {
             state: AtomicU8::new(0),
-            val: SharedUnsafeCell::new(MaybeUninit::uninit())
+            val: SharedUnsafeCell::new(MaybeUninit::uninit()),
         }
     }
 
     pub const fn new(val: T) -> Self {
         Self {
             state: AtomicU8::new(2),
-            val: SharedUnsafeCell::new(MaybeUninit::new(val))
+            val: SharedUnsafeCell::new(MaybeUninit::new(val)),
         }
     }
 

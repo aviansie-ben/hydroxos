@@ -8,7 +8,7 @@ use crate::sync::{Future, UninterruptibleSpinlock};
 
 #[derive(Debug)]
 pub struct SerialPort {
-    port: UninterruptibleSpinlock<uart_16550::SerialPort>
+    port: UninterruptibleSpinlock<uart_16550::SerialPort>,
 }
 
 #[dyn_dyn_impl(Tty)]
@@ -54,6 +54,6 @@ pub unsafe fn init() -> DeviceRef<SerialPort> {
     dev::device_root()
         .dev()
         .add_device(DeviceNode::new(Box::from("serial0"), SerialPort {
-            port: UninterruptibleSpinlock::new(port)
+            port: UninterruptibleSpinlock::new(port),
         }))
 }

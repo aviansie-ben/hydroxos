@@ -78,7 +78,7 @@ struct ProcessInternal {
     threads_tail: *const Thread,
     ready_head: *const Thread,
     ready_tail: *const Thread,
-    addr_space: Option<AddressSpace>
+    addr_space: Option<AddressSpace>,
 }
 
 unsafe impl Send for ProcessInternal {}
@@ -92,7 +92,7 @@ impl !Unpin for ProcessInternal {}
 pub struct Process {
     pid: u64,
     cmd: Vec<String>,
-    internal: UninterruptibleSpinlock<ProcessInternal>
+    internal: UninterruptibleSpinlock<ProcessInternal>,
 }
 
 impl Process {
@@ -108,8 +108,8 @@ impl Process {
                 threads_tail: ptr::null(),
                 ready_head: ptr::null(),
                 ready_tail: ptr::null(),
-                addr_space
-            })
+                addr_space,
+            }),
         })
     }
 
@@ -169,7 +169,7 @@ impl Process {
     pub fn lock(&self) -> ProcessLock {
         ProcessLock {
             guard: self.internal.lock(),
-            process: self
+            process: self,
         }
     }
 
@@ -192,7 +192,7 @@ impl Process {
 /// within interrupt handlers. For this reason, critical sections holding such locks should be as short as reasonably possible.
 pub struct ProcessLock<'a> {
     guard: UninterruptibleSpinlockGuard<'a, ProcessInternal>,
-    process: &'a Process
+    process: &'a Process,
 }
 
 impl<'a> ProcessLock<'a> {
@@ -390,14 +390,14 @@ pub enum ThreadState {
     /// The thread is currently running on a CPU core.
     Running,
     /// The thread has been terminated and its resources have been freed.
-    Dead
+    Dead,
 }
 
 struct ThreadInternal {
     state: ThreadState,
     regs: SavedRegisters,
     join_writer: Option<FutureWriter<()>>,
-    err_on_block: bool
+    err_on_block: bool,
 }
 
 unsafe impl Send for ThreadInternal {}
@@ -406,7 +406,7 @@ struct ThreadProcessInternal {
     prev: *const Thread,
     next: Option<Pin<Arc<Thread>>>,
     prev_ready: *const Thread,
-    next_ready: *const Thread
+    next_ready: *const Thread,
 }
 
 unsafe impl Send for ThreadProcessInternal {}
@@ -424,7 +424,7 @@ pub struct Thread {
     thread_id: u64,
     internal: UninterruptibleSpinlock<ThreadInternal>,
     process_internal: SharedUnsafeCell<ThreadProcessInternal>,
-    wait_state: SharedUnsafeCell<ThreadWaitState>
+    wait_state: SharedUnsafeCell<ThreadWaitState>,
 }
 
 impl !Unpin for Thread {}
@@ -438,15 +438,15 @@ impl Thread {
                 state: ThreadState::Suspended,
                 regs,
                 join_writer: Some(FutureWriter::new()),
-                err_on_block: false
+                err_on_block: false,
             }),
             process_internal: SharedUnsafeCell::new(ThreadProcessInternal {
                 prev: process_lock.guard.threads_tail,
                 next: None,
                 prev_ready: ptr::null(),
-                next_ready: ptr::null()
+                next_ready: ptr::null(),
             }),
-            wait_state: SharedUnsafeCell::new(ThreadWaitState::new())
+            wait_state: SharedUnsafeCell::new(ThreadWaitState::new()),
         });
 
         process_lock.guard.next_thread_id += 1;
@@ -623,7 +623,7 @@ impl Thread {
     pub fn lock(&self) -> ThreadLock {
         ThreadLock {
             guard: self.internal.lock(),
-            thread: self
+            thread: self,
         }
     }
 
@@ -703,7 +703,7 @@ impl fmt::Display for ThreadDebugName<'_> {
 /// within interrupt handlers. For this reason, critical sections holding such locks should be as short as reasonably possible.
 pub struct ThreadLock<'a> {
     guard: UninterruptibleSpinlockGuard<'a, ThreadInternal>,
-    thread: &'a Thread
+    thread: &'a Thread,
 }
 
 impl<'a> ThreadLock<'a> {

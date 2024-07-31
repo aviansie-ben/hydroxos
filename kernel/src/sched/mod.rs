@@ -118,7 +118,7 @@ pub unsafe fn perform_context_switch_interrupt(old_thread_lock: Option<task::Thr
             task::ThreadState::Dead => {
                 // TODO Free thread memory
             },
-            _ => {}
+            _ => {},
         }
     }
 

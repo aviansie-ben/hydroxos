@@ -18,7 +18,7 @@ pub enum LogLevel {
     Warning,
     Notice,
     Info,
-    Debug
+    Debug,
 }
 
 impl LogLevel {
@@ -29,7 +29,7 @@ impl LogLevel {
             LogLevel::Warning => "WARN",
             LogLevel::Notice => "NOTICE",
             LogLevel::Info => "INFO",
-            LogLevel::Debug => "DEBUG"
+            LogLevel::Debug => "DEBUG",
         }
     }
 
@@ -40,7 +40,7 @@ impl LogLevel {
             LogLevel::Warning => AnsiColor::Yellow,
             LogLevel::Notice => AnsiColor::Cyan,
             LogLevel::Info => AnsiColor::White,
-            LogLevel::Debug => AnsiColor::LightGray
+            LogLevel::Debug => AnsiColor::LightGray,
         }
     }
 }
