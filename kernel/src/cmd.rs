@@ -1,3 +1,6 @@
+// Many functions here are accessing lists of arguments and I'd prefer to be consistent in how elements are accessed
+#![allow(clippy::get_first)]
+
 use alloc::{format, vec};
 use alloc::{string::String, vec::Vec};
 use core::fmt::{self, Write};
@@ -180,7 +183,7 @@ fn run_proc_cmd<T: Tty + ?Sized>(w: &mut TtyWriter<T>, args: &[&str]) -> Result<
     match args.get(0) {
         Some(&"ls") => {
             for p in &*Process::list() {
-                writeln!(w, "{}: {}", p.pid(), p.cmd().get(0).map_or("???", |s| &*s))?;
+                writeln!(w, "{}: {}", p.pid(), p.cmd().get(0).map_or("???", |s| s))?;
             }
         },
         Some(&"threads") => {

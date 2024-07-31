@@ -127,7 +127,7 @@ impl TryFrom<u8> for CommonKeycode {
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         if (value as usize) < Self::NUM_KEYCODES {
             // SAFETY: All u8 values less than NUM_KEYCODES have a valid enum representation
-            Ok(unsafe { mem::transmute(value) })
+            Ok(unsafe { mem::transmute::<u8, CommonKeycode>(value) })
         } else {
             Err(InvalidKeycodeError)
         }
