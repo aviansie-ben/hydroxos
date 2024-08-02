@@ -1,4 +1,3 @@
-use core::alloc::{GlobalAlloc, Layout};
 use core::sync::atomic::{AtomicPtr, Ordering};
 use core::{cmp, ptr};
 
@@ -82,6 +81,13 @@ pub unsafe fn free(ptr: *mut u8, size: usize) {
     }
 }
 
+pub fn is_in_early_alloc_region(ptr: *mut u8) -> bool {
+    let ea_ptr = EARLY_ALLOC_AREA.get() as *mut u8;
+    let ea_end_ptr = unsafe { ea_ptr.add(EARLY_ALLOC_SIZE) };
+
+    ptr >= ea_ptr && ptr < ea_end_ptr
+}
+
 unsafe fn realloc_grow(ptr: *mut u8, old_size: usize, new_size: usize) -> *mut u8 {
     let old_size = get_full_size(old_size);
     let new_size = get_full_size(new_size);
@@ -141,33 +147,3 @@ pub unsafe fn realloc(ptr: *mut u8, old_size: usize, new_size: usize) -> *mut u8
         cmp::Ordering::Equal => ptr,
     }
 }
-
-struct EarlyAlloc;
-
-unsafe impl GlobalAlloc for EarlyAlloc {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        alloc(layout.size(), layout.align())
-    }
-
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        free(ptr, layout.size());
-    }
-
-    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        let new_ptr = realloc(ptr, layout.size(), new_size);
-
-        if !new_ptr.is_null() {
-            new_ptr
-        } else {
-            let new_ptr = self.alloc(Layout::from_size_align_unchecked(new_size, layout.align()));
-
-            ptr::copy_nonoverlapping(ptr, new_ptr, layout.size().min(new_size));
-            self.dealloc(ptr, layout);
-
-            new_ptr
-        }
-    }
-}
-
-#[global_allocator]
-static ALLOCATOR: EarlyAlloc = EarlyAlloc;
