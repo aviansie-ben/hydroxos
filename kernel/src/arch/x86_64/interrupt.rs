@@ -355,6 +355,18 @@ impl InterruptFrame {
     }
 }
 
+pub fn are_enabled() -> bool {
+    x86_64::instructions::interrupts::are_enabled()
+}
+
+pub fn enable() {
+    x86_64::instructions::interrupts::enable();
+}
+
+pub fn disable() {
+    x86_64::instructions::interrupts::disable();
+}
+
 #[repr(C)]
 struct InterruptTableEntry {
     offset_0: u16,

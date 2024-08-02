@@ -9,6 +9,7 @@ extern crate alloc;
 use core::panic::PanicInfo;
 
 use bootloader::{entry_point, BootInfo};
+use hydroxos_kernel::arch::interrupt;
 
 #[cfg(not(test))]
 entry_point!(kernel_main);
@@ -49,8 +50,7 @@ fn test_main(_: &'static BootInfo) -> ! {
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     use hydroxos_kernel::panic;
-    use x86_64::instructions::interrupts;
 
-    interrupts::disable();
+    interrupt::disable();
     panic::show_panic_crash_screen(info);
 }

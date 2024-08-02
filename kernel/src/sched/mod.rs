@@ -8,7 +8,7 @@ use alloc::collections::vec_deque::VecDeque;
 use core::cell::UnsafeCell;
 
 use self::task::{Process, Thread};
-use crate::{arch::interrupt::InterruptFrame, sync::uninterruptible::InterruptDisabler};
+use crate::{arch::interrupt::{self, InterruptFrame}, sync::uninterruptible::InterruptDisabler};
 
 pub mod task;
 pub mod wait;
@@ -70,7 +70,7 @@ pub(crate) unsafe fn end_interrupt(interrupt_frame: &mut InterruptFrame) {
 ///
 /// A panic will occur when running the soft interrupt if it attempts to perform a blocking operation.
 pub fn enqueue_soft_interrupt<F: FnOnce() + 'static>(f: F) {
-    if !is_handling_interrupt() && x86_64::instructions::interrupts::are_enabled() {
+    if !is_handling_interrupt() && interrupt::are_enabled() {
         let _interrupts_disabled = InterruptDisabler::new();
         f();
     } else {

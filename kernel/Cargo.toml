@@ -17,8 +17,9 @@ kernel-stack-size = 64
 physical-memory-offset = "0xFFFFF80000000000"
 
 [features]
-default = ["spinlock_tracking"]
-check_arch_api = []
+default = ["spinlock_tracking", "real_arch_api"]
+real_arch_api = ["dep:ps2", "dep:uart_16550", "dep:x86_64"]
+check_arch_api = ["spinlock_tracking"]
 spinlock_tracking = []
 
 [dependencies]
@@ -27,8 +28,10 @@ cfg-if = { version = "1.0.0" }
 dyn-dyn = { version = "0.2.0", default-features = false, features = ["alloc", "dynamic-names"] }
 itertools = { version = "0.10.5", default-features = false, features = ["use_alloc"] }
 lock_api = "0.4.12"
-ps2 = "0.2.0"
 spin = "0.9.8"
 static_assertions = "1.1.0"
-uart_16550 = "0.2.19"
-x86_64 = "0.14.12"
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+ps2 = { version = "0.2.0", optional = true }
+uart_16550 = { version = "0.2.19", optional = true }
+x86_64 = { version = "0.14.12", optional = true }

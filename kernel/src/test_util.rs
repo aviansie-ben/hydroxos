@@ -5,6 +5,7 @@ use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
 
 use dyn_dyn::{dyn_dyn_cast, dyn_dyn_impl};
 
+use crate::arch::interrupt;
 use crate::io::dev::{device_root, Device, DeviceNode, DeviceRef};
 use crate::io::tty::{Tty, TtyExt, TtyWriter};
 use crate::sched::is_handling_interrupt;
@@ -116,7 +117,7 @@ pub fn run_tests(tests: &'static [&dyn Test]) -> ! {
 }
 
 pub fn run_tests_thread(tests: &[&dyn Test]) {
-    x86_64::instructions::interrupts::enable();
+    interrupt::enable();
 
     for test in tests {
         TEST_IDX.fetch_add(1, Ordering::Relaxed);

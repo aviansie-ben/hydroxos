@@ -21,3 +21,15 @@ impl InterruptFrame {
         unimplemented!()
     }
 }
+
+pub fn are_enabled() -> bool {
+    unimplemented!()
+}
+
+pub fn enable() {
+    unimplemented!()
+}
+
+pub fn disable() {
+    unimplemented!()
+}

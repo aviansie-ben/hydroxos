@@ -30,8 +30,7 @@ use core::mem;
 use core::ops::{Deref, DerefMut};
 use core::ptr;
 
-use x86_64::instructions::interrupts;
-
+use crate::arch::interrupt;
 use crate::sched;
 use crate::util::{DebugOrDefault, SharedUnsafeCell};
 
@@ -48,8 +47,8 @@ impl InterruptDisabler {
         let (n, was_enabled) = INTERRUPT_DISABLER_STATE.get();
 
         let was_enabled = if n == 0 {
-            let was_enabled = interrupts::are_enabled();
-            interrupts::disable();
+            let was_enabled = interrupt::are_enabled();
+            interrupt::disable();
             was_enabled
         } else {
             was_enabled
@@ -83,7 +82,7 @@ impl InterruptDisabler {
     /// Drops this interrupt-disabling guard without actually enabling interrupts. Returns `true` if interrupts would have been enabled had
     /// this guard been dropped normally and `false` otherwise.
     pub fn drop_without_enable(self) -> bool {
-        assert!(!interrupts::are_enabled());
+        assert!(!interrupt::are_enabled());
 
         mem::forget(self);
 
@@ -98,7 +97,7 @@ impl !Send for InterruptDisabler {}
 
 impl Drop for InterruptDisabler {
     fn drop(&mut self) {
-        assert!(!interrupts::are_enabled());
+        assert!(!interrupt::are_enabled());
 
         let (n, was_enabled) = INTERRUPT_DISABLER_STATE.get();
         INTERRUPT_DISABLER_STATE.set((n - 1, was_enabled));
@@ -107,7 +106,7 @@ impl Drop for InterruptDisabler {
             sched::run_soft_interrupts();
             assert!(INTERRUPT_DISABLER_STATE.get().0 == 0);
 
-            interrupts::enable();
+            interrupt::enable();
         };
     }
 }
@@ -532,24 +531,24 @@ mod test {
     #[test_case]
     fn test_interrupt_disabler() {
         assert_eq!(0, InterruptDisabler::num_held());
-        assert!(interrupts::are_enabled());
+        assert!(interrupt::are_enabled());
 
         {
             let _disabler = InterruptDisabler::new();
 
-            assert!(!interrupts::are_enabled());
+            assert!(!interrupt::are_enabled());
             assert_eq!(1, InterruptDisabler::num_held());
             assert!(InterruptDisabler::was_enabled());
         }
 
         assert_eq!(0, InterruptDisabler::num_held());
-        assert!(interrupts::are_enabled());
+        assert!(interrupt::are_enabled());
     }
 
     #[test_case]
     fn test_interrupt_disabler_nested() {
         assert_eq!(0, InterruptDisabler::num_held());
-        assert!(interrupts::are_enabled());
+        assert!(interrupt::are_enabled());
 
         {
             let _disabler_1 = InterruptDisabler::new();
@@ -557,60 +556,60 @@ mod test {
             {
                 let _disabler_2 = InterruptDisabler::new();
 
-                assert!(!interrupts::are_enabled());
+                assert!(!interrupt::are_enabled());
                 assert_eq!(2, InterruptDisabler::num_held());
                 assert!(InterruptDisabler::was_enabled());
             }
 
-            assert!(!interrupts::are_enabled());
+            assert!(!interrupt::are_enabled());
             assert_eq!(1, InterruptDisabler::num_held());
             assert!(InterruptDisabler::was_enabled());
         }
 
         assert_eq!(0, InterruptDisabler::num_held());
-        assert!(interrupts::are_enabled());
+        assert!(interrupt::are_enabled());
     }
 
     #[test_case]
     fn test_interrupt_disabler_keep_disable() {
         assert_eq!(0, InterruptDisabler::num_held());
-        assert!(interrupts::are_enabled());
+        assert!(interrupt::are_enabled());
 
-        interrupts::disable();
+        interrupt::disable();
 
         {
             let _disabler = InterruptDisabler::new();
 
-            assert!(!interrupts::are_enabled());
+            assert!(!interrupt::are_enabled());
             assert_eq!(1, InterruptDisabler::num_held());
             assert!(!InterruptDisabler::was_enabled());
         }
 
         assert_eq!(0, InterruptDisabler::num_held());
-        assert!(!interrupts::are_enabled());
+        assert!(!interrupt::are_enabled());
 
-        interrupts::enable();
+        interrupt::enable();
     }
 
     #[test_case]
     fn test_interrupt_disabler_force_disable() {
         assert_eq!(0, InterruptDisabler::num_held());
-        assert!(interrupts::are_enabled());
+        assert!(interrupt::are_enabled());
 
         {
             let _disabler = InterruptDisabler::new();
 
             InterruptDisabler::force_remain_disabled();
 
-            assert!(!interrupts::are_enabled());
+            assert!(!interrupt::are_enabled());
             assert_eq!(1, InterruptDisabler::num_held());
             assert!(!InterruptDisabler::was_enabled());
         }
 
         assert_eq!(0, InterruptDisabler::num_held());
-        assert!(!interrupts::are_enabled());
+        assert!(!interrupt::are_enabled());
 
-        interrupts::enable();
+        interrupt::enable();
     }
 
     #[test_case]
