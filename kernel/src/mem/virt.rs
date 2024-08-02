@@ -5,10 +5,9 @@ use core::{mem, ptr};
 
 use static_assertions::const_assert;
 
+use super::frame::{self, FrameAllocator};
 use crate::arch::page::{get_phys_mem_ptr, PhysMemPtr, IS_PHYS_MEM_ALWAYS_MAPPED, PAGE_SIZE};
 use crate::arch::VirtAddr;
-use crate::frame_alloc;
-use crate::frame_alloc::FrameAllocator;
 
 #[derive(Debug, Clone, Copy)]
 enum VirtualAllocSplitIndex {
@@ -99,7 +98,7 @@ impl VirtualAllocPage {
         //      virtual allocations to work, i.e. all of physical memory is mapped at all times
         const_assert!(IS_PHYS_MEM_ALWAYS_MAPPED);
 
-        let ptr = get_phys_mem_ptr(frame_alloc::get_allocator().alloc_one().expect("Out of physical memory"));
+        let ptr = get_phys_mem_ptr(frame::get_allocator().alloc_one().expect("Out of physical memory"));
 
         unsafe {
             *ptr.ptr() = VirtualAllocPage {
@@ -117,7 +116,7 @@ impl VirtualAllocPage {
 
     unsafe fn free(ptr: *mut VirtualAllocPage) {
         let ptr = PhysMemPtr::from_raw(ptr);
-        frame_alloc::get_allocator().free_one(ptr.phys_addr());
+        frame::get_allocator().free_one(ptr.phys_addr());
     }
 
     fn range(&self) -> Option<VirtualAllocRegion> {

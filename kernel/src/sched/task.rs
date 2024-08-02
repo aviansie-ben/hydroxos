@@ -202,7 +202,7 @@ impl<'a> ProcessLock<'a> {
     }
 
     fn create_kernel_thread_internal(&mut self, f: extern "C" fn(*mut u8) -> !, arg: *mut u8, stack_size: usize) -> Pin<Arc<Thread>> {
-        let stack = crate::early_alloc::alloc(stack_size, 16); // TODO Allocate pages instead. Place guard page.
+        let stack = crate::mem::early::alloc(stack_size, 16); // TODO Allocate pages instead. Place guard page.
         Thread::create_internal(self, SavedRegisters::new_kernel_thread(f, arg, unsafe { stack.add(stack_size) }))
     }
 

@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
 
 use super::PhysAddr;
-use crate::virtual_alloc::VirtualAllocator;
+use crate::mem::virt::VirtualAllocator;
 
 pub const PAGE_SIZE: usize = 4096;
 pub const IS_PHYS_MEM_ALWAYS_MAPPED: bool = true;

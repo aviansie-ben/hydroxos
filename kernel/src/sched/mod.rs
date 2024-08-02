@@ -8,7 +8,10 @@ use alloc::collections::vec_deque::VecDeque;
 use core::cell::UnsafeCell;
 
 use self::task::{Process, Thread};
-use crate::{arch::interrupt::{self, InterruptFrame}, sync::uninterruptible::InterruptDisabler};
+use crate::{
+    arch::interrupt::{self, InterruptFrame},
+    sync::uninterruptible::InterruptDisabler,
+};
 
 pub mod task;
 pub mod wait;

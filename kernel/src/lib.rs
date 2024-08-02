@@ -36,36 +36,34 @@ pub mod log;
 
 pub mod arch;
 pub mod cmd;
-pub mod early_alloc;
-pub mod frame_alloc;
 pub mod io;
+pub mod mem;
 pub mod panic;
 pub mod sched;
 pub mod sync;
 pub mod test_util;
 pub mod util;
-pub mod virtual_alloc;
 
 pub unsafe fn init_phase_1(boot_info: &'static BootInfo) {
-    early_alloc::init();
+    mem::early::init();
     arch::init_phase_1(boot_info);
 
-    frame_alloc::init(boot_info);
+    mem::frame::init(boot_info);
     log::init(io::vt::get_global_manager().dev().get_terminal(0).unwrap());
 }
 
 pub unsafe fn init_phase_2() {
     use crate::arch::page::PAGE_SIZE;
-    use crate::frame_alloc::FrameAllocator;
     use crate::io::dev::log_device_tree;
+    use crate::mem::frame::FrameAllocator;
 
     log!(Info, "kernel", "Booting HydroxOS v{}", env!("CARGO_PKG_VERSION"));
     log!(
         Debug,
         "kernel",
         "Detected {} MiB memory, {} MiB free",
-        frame_alloc::num_total_frames() * PAGE_SIZE / (1024 * 1024),
-        frame_alloc::get_allocator().num_frames_available() * PAGE_SIZE / (1024 * 1024)
+        mem::frame::num_total_frames() * PAGE_SIZE / (1024 * 1024),
+        mem::frame::get_allocator().num_frames_available() * PAGE_SIZE / (1024 * 1024)
     );
 
     arch::init_phase_2();

@@ -7,11 +7,11 @@ use x86_64::structures::paging::page_table::PageTableEntry;
 use x86_64::structures::paging::{FrameDeallocator, MappedPageTable, PageTable, PageTableFlags, PageTableIndex, PhysFrame, Size4KiB};
 use x86_64::{PhysAddr, VirtAddr};
 
-use crate::frame_alloc::FrameAllocator;
+use crate::mem::frame::FrameAllocator;
+use crate::mem::virt::{VirtualAllocRegion, VirtualAllocator};
 use crate::sync::uninterruptible::UninterruptibleSpinlockGuard;
 use crate::sync::UninterruptibleSpinlock;
 use crate::util::OneShotManualInit;
-use crate::virtual_alloc::{VirtualAllocRegion, VirtualAllocator};
 
 pub const PAGE_SIZE: usize = 4096;
 pub const IS_PHYS_MEM_ALWAYS_MAPPED: bool = true;
@@ -96,7 +96,7 @@ impl AddressSpace {
 
     pub fn new() -> AddressSpace {
         unsafe {
-            let mut addrspace = AddressSpace::from_page_table(crate::frame_alloc::get_allocator().alloc_one().unwrap());
+            let mut addrspace = AddressSpace::from_page_table(crate::mem::frame::get_allocator().alloc_one().unwrap());
             let mut l4_table = addrspace.as_page_table();
             let l4_table = l4_table.level_4_table();
 
@@ -183,7 +183,7 @@ pub(super) unsafe fn init_kernel_addrspace() {
     let mut kl4_table = kernel_addrspace.as_page_table();
 
     {
-        let mut frame_alloc = crate::frame_alloc::get_allocator().lock();
+        let mut frame_alloc = crate::mem::frame::get_allocator().lock();
 
         // The bootloader will map some pages in the lower half of the address space, but these should no longer be used.
         // TODO: We can probably reclaim the frames used by these page tables
