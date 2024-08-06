@@ -132,7 +132,7 @@ impl AddressSpace {
     }
 
     pub(crate) unsafe fn init_kernel_virtual_alloc(&mut self) {
-        fn find_free_regions_in(table: &PageTable, range: Range<usize>, start_addr: VirtAddr, level: u64, out: &mut VirtualAllocator) {
+        fn find_free_regions_in(table: &PageTable, range: Range<usize>, start_addr: VirtAddr, level: u64, out: &mut VirtualAllocator, pending_region: &mut Option<VirtualAllocRegion>) {
             let page_size = PAGE_SIZE << ((level - 1) * 9);
 
             for (i, j) in range.enumerate() {
@@ -140,8 +140,20 @@ impl AddressSpace {
                 let start_addr = start_addr + (i * page_size);
 
                 if entry.is_unused() {
-                    unsafe {
-                        out.free(VirtualAllocRegion::new(start_addr, start_addr + page_size));
+                    match *pending_region {
+                        Some(ref mut pending_region) if pending_region.end() == start_addr => {
+                            *pending_region = VirtualAllocRegion::new(pending_region.start(), start_addr + page_size);
+                        },
+                        Some(ref mut pending_region) => {
+                            unsafe {
+                                out.free(*pending_region);
+                            }
+
+                            *pending_region = VirtualAllocRegion::new(start_addr, start_addr + page_size);
+                        },
+                        None => {
+                            *pending_region = Some(VirtualAllocRegion::new(start_addr, start_addr + page_size));
+                        },
                     }
                 } else if level > 1 && !entry.flags().contains(PageTableFlags::HUGE_PAGE) {
                     find_free_regions_in(
@@ -150,10 +162,13 @@ impl AddressSpace {
                         start_addr,
                         level - 1,
                         out,
+                        pending_region,
                     );
                 }
             }
         }
+
+        let mut pending_region = None;
 
         find_free_regions_in(
             &*get_phys_mem_ptr(self.page_table).ptr(),
@@ -161,7 +176,14 @@ impl AddressSpace {
             VirtAddr::new(0xffff800000000000),
             4,
             &mut self.virtual_alloc,
+            &mut pending_region,
         );
+
+        if let Some(pending_region) = pending_region {
+            unsafe {
+                self.virtual_alloc.free(pending_region);
+            }
+        }
     }
 
     pub fn virtual_alloc(&mut self) -> &mut VirtualAllocator {
