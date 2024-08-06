@@ -6,6 +6,7 @@
 #![feature(const_mut_refs)]
 #![feature(const_replace)]
 #![feature(custom_test_frameworks)]
+#![feature(generic_const_exprs)]
 #![feature(maybe_uninit_uninit_array)]
 #![feature(naked_functions)]
 #![feature(negative_impls)]

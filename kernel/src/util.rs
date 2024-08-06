@@ -2,7 +2,7 @@ use alloc::sync::{Arc, Weak};
 use core::cell::UnsafeCell;
 use core::fmt;
 use core::mem::MaybeUninit;
-use core::ops::{Deref, DerefMut};
+use core::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Deref, DerefMut, Not, Sub, SubAssign};
 use core::pin::Pin;
 use core::sync::atomic::{AtomicU8, Ordering};
 
@@ -481,6 +481,211 @@ impl<T> Drop for OneShotManualInit<T> {
             unsafe {
                 (*self.val.get()).assume_init_drop();
             }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FixedBitVector<const N: usize>
+where
+    [(); N.div_ceil(32)]:,
+{
+    contents: [u32; N.div_ceil(32)],
+}
+
+impl<const N: usize> FixedBitVector<N>
+where
+    [(); N.div_ceil(32)]:,
+{
+    const INNER_SIZE: usize = N.div_ceil(32);
+
+    pub fn new() -> Self {
+        Self {
+            contents: [0; N.div_ceil(32)],
+        }
+    }
+
+    #[track_caller]
+    const fn get_bit_pos(idx: usize) -> (usize, usize) {
+        if idx >= N {
+            panic!("out of bounds bitvector access");
+        }
+
+        (idx >> 5, idx & 31)
+    }
+
+    const fn get_idx(idx: usize, bit: usize) -> usize {
+        (idx << 5) | bit
+    }
+
+    #[track_caller]
+    pub const fn get(&self, idx: usize) -> bool {
+        let (idx, bit) = Self::get_bit_pos(idx);
+
+        self.contents[idx] & (1 << bit) != 0
+    }
+
+    #[track_caller]
+    pub const fn set(&mut self, idx: usize, val: bool) -> bool {
+        let (idx, bit) = Self::get_bit_pos(idx);
+
+        let old_val = self.contents[idx] & (1 << bit) != 0;
+
+        if val {
+            self.contents[idx] |= 1 << bit;
+        } else {
+            self.contents[idx] &= !(1 << bit);
+        }
+
+        old_val
+    }
+
+    pub fn invert(&mut self) {
+        for i in 0..N {
+            self.contents[i] ^= !0;
+        }
+
+        let last_bits = N % 32;
+        if last_bits != 0 {
+            self.contents[Self::INNER_SIZE - 1] &= (1 << last_bits) - 1;
+        }
+    }
+
+    pub fn iter(&self) -> FixedBitVectorIter<N> {
+        FixedBitVectorIter(self, 0)
+    }
+
+    pub fn find_next(&self, start: usize) -> Option<usize> {
+        if start >= N {
+            return None;
+        }
+
+        let (mut idx, start_bit) = Self::get_bit_pos(start);
+        let mut mask = !((1 << start_bit) - 1);
+
+        while idx < Self::INNER_SIZE {
+            let word_val = self.contents[idx] & mask;
+
+            if word_val != 0 {
+                return Some(Self::get_idx(idx, word_val.trailing_zeros() as usize));
+            }
+
+            idx += 1;
+            mask = 0xff;
+        }
+
+        None
+    }
+}
+
+impl<const N: usize> BitAndAssign for FixedBitVector<N>
+where
+    [(); N.div_ceil(32)]:,
+{
+    fn bitand_assign(&mut self, rhs: Self) {
+        for i in 0..N {
+            self.contents[i] &= rhs.contents[i];
+        }
+    }
+}
+
+impl<const N: usize> BitAnd for FixedBitVector<N>
+where
+    [(); N.div_ceil(32)]:,
+{
+    type Output = FixedBitVector<N>;
+
+    fn bitand(self, rhs: Self) -> Self::Output {
+        let mut result = self;
+        result &= rhs;
+
+        result
+    }
+}
+
+impl<const N: usize> BitOrAssign for FixedBitVector<N>
+where
+    [(); N.div_ceil(32)]:,
+{
+    fn bitor_assign(&mut self, rhs: Self) {
+        for i in 0..N {
+            self.contents[i] |= rhs.contents[i];
+        }
+    }
+}
+
+impl<const N: usize> BitOr for FixedBitVector<N>
+where
+    [(); N.div_ceil(32)]:,
+{
+    type Output = FixedBitVector<N>;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        let mut result = self;
+        result |= rhs;
+
+        result
+    }
+}
+
+impl<const N: usize> SubAssign for FixedBitVector<N>
+where
+    [(); N.div_ceil(32)]:,
+{
+    fn sub_assign(&mut self, rhs: Self) {
+        for i in 0..N {
+            self.contents[i] &= !rhs.contents[i];
+        }
+    }
+}
+
+impl<const N: usize> Sub for FixedBitVector<N>
+where
+    [(); N.div_ceil(32)]:,
+{
+    type Output = FixedBitVector<N>;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        let mut result = self;
+        result -= rhs;
+
+        result
+    }
+}
+
+impl<const N: usize> Not for FixedBitVector<N>
+where
+    [(); N.div_ceil(32)]:,
+{
+    type Output = FixedBitVector<N>;
+
+    fn not(self) -> Self::Output {
+        let mut result = self;
+        result.invert();
+
+        result
+    }
+}
+
+pub struct FixedBitVectorIter<'a, const N: usize>(&'a FixedBitVector<N>, usize)
+where
+    [(); N.div_ceil(32)]:;
+
+impl<'a, const N: usize> Iterator for FixedBitVectorIter<'a, N>
+where
+    [(); N.div_ceil(32)]:,
+{
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let FixedBitVectorIter(bv, ref mut start) = *self;
+
+        if let Some(idx) = bv.find_next(*start) {
+            *start = idx + 1;
+            Some(idx)
+        } else {
+            *start = N;
+            None
         }
     }
 }
