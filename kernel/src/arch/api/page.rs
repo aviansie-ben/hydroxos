@@ -1,10 +1,22 @@
 use core::marker::PhantomData;
 
-use super::PhysAddr;
+use bitflags::bitflags;
+
+use super::{PhysAddr, VirtAddr};
 use crate::mem::virt::VirtualAllocator;
+use crate::sync::uninterruptible::UninterruptibleSpinlockGuard;
 
 pub const PAGE_SIZE: usize = 4096;
 pub const IS_PHYS_MEM_ALWAYS_MAPPED: bool = true;
+
+bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub struct PageFlags: u16 {
+        const USER = 0x1;
+        const WRITEABLE = 0x2;
+        const EXECUTABLE = 0x4;
+    }
+}
 
 #[derive(Debug)]
 pub struct PhysMemPtr<T: ?Sized> {
@@ -50,6 +62,10 @@ impl AddressSpace {
         unimplemented!()
     }
 
+    pub fn kernel() -> UninterruptibleSpinlockGuard<'static, AddressSpace> {
+        unimplemented!()
+    }
+
     pub fn new() -> AddressSpace {
         unimplemented!()
     }
@@ -59,6 +75,18 @@ impl AddressSpace {
     }
 
     pub fn virtual_alloc(&mut self) -> &mut VirtualAllocator {
+        unimplemented!()
+    }
+
+    pub fn get_page(&self, addr: VirtAddr) -> Option<(PhysAddr, PageFlags)> {
+        unimplemented!()
+    }
+
+    pub fn set_page_user(&mut self, addr: VirtAddr, mapping: Option<(PhysAddr, PageFlags)>) {
+        unimplemented!()
+    }
+
+    pub unsafe fn set_page_kernel(&mut self, addr: VirtAddr, mapping: Option<(PhysAddr, PageFlags)>) {
         unimplemented!()
     }
 }
