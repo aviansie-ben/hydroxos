@@ -220,6 +220,33 @@ fn run_proc_cmd<T: Tty + ?Sized>(w: &mut TtyWriter<T>, args: &[&str]) -> Result<
     Ok(())
 }
 
+fn run_slab_cmd<T: Tty + ?Sized>(w: &mut TtyWriter<T>, args: &[&str]) -> Result<(), fmt::Error> {
+    use crate::mem::slab;
+
+    match args.get(0) {
+        None | Some(&"stats") => {
+            let mut print_alloc = |name: &str, (allocated, total): (usize, usize)| writeln!(w, "{}: {}/{}", name, allocated, total);
+
+            print_alloc("SLAB_INFO", slab::SLAB_INFO.lock().count())?;
+            print_alloc("SLAB_8", slab::SLAB_8.lock().count())?;
+            print_alloc("SLAB_16", slab::SLAB_16.lock().count())?;
+            print_alloc("SLAB_32", slab::SLAB_32.lock().count())?;
+            print_alloc("SLAB_64", slab::SLAB_64.lock().count())?;
+            print_alloc("SLAB_128", slab::SLAB_128.lock().count())?;
+            print_alloc("SLAB_256", slab::SLAB_256.lock().count())?;
+            print_alloc("SLAB_512", slab::SLAB_512.lock().count())?;
+            print_alloc("SLAB_1024", slab::SLAB_1024.lock().count())?;
+            print_alloc("SLAB_2048", slab::SLAB_2048.lock().count())?;
+        },
+        Some(subcmd) => {
+            writeln!(w, "unknown slab subcommand '{}'", subcmd)?;
+            writeln!(w, "run 'help slab' for more information")?;
+        },
+    }
+
+    Ok(())
+}
+
 fn run_debug_console_command<T: Tty + ?Sized>(w: &mut TtyWriter<T>, cmd: &[&str]) -> Result<(), fmt::Error> {
     match cmd[0] {
         "dev" => {
@@ -228,11 +255,15 @@ fn run_debug_console_command<T: Tty + ?Sized>(w: &mut TtyWriter<T>, cmd: &[&str]
         "proc" => {
             run_proc_cmd(w, &cmd[1..])?;
         },
+        "slab" => {
+            run_slab_cmd(w, &cmd[1..])?;
+        },
         "help" => match cmd.get(1) {
             None => {
                 writeln!(w, "available commands are:")?;
                 writeln!(w, "  dev - device information")?;
                 writeln!(w, "  proc - process information")?;
+                writeln!(w, "  slab - slab alloc statistics")?;
                 writeln!(w)?;
                 writeln!(w, "run 'help <cmd>' for more information")?;
             },
@@ -245,6 +276,10 @@ fn run_debug_console_command<T: Tty + ?Sized>(w: &mut TtyWriter<T>, cmd: &[&str]
                 writeln!(w, "available subcommands are:")?;
                 writeln!(w, "  proc ls - list processes")?;
                 writeln!(w, "  proc threads <pid> - list threads in process")?;
+            },
+            Some(&"slab") => {
+                writeln!(w, "available subcommands are:")?;
+                writeln!(w, "  slab stats - print slab allocator statistics")?;
             },
             Some(cmd) => {
                 writeln!(w, "unknown command '{}'", cmd)?;
