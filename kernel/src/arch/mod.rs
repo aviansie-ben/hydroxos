@@ -1,4 +1,4 @@
-#[cfg_attr(not(feature = "check_arch_api"), allow(unused))]
+#[cfg_attr(feature = "real_arch_api", allow(unused))]
 mod api;
 
 cfg_if::cfg_if! {
