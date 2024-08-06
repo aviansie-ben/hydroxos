@@ -355,7 +355,7 @@ impl<T: ?Sized> UninterruptibleSpinlock<T> {
     /// Gets a mutable reference to the contents of this [`UninterruptibleSpinlock`] given a
     /// mutable reference to the spinlock itself.
     pub fn get_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.1.get() }
+        self.1.get_mut()
     }
 
     /// Checks whether this [`UninterruptibleSpinlock`] is currently being locked by the provided
