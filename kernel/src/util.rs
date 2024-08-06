@@ -24,6 +24,12 @@ impl<T: ?Sized> Deref for SharedUnsafeCell<T> {
     }
 }
 
+impl<T: ?Sized> DerefMut for SharedUnsafeCell<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 unsafe impl<T> Sync for SharedUnsafeCell<T> {}
 unsafe impl<T> Send for SharedUnsafeCell<T> {}
 
