@@ -38,7 +38,19 @@ impl VirtAddr {
         unimplemented!()
     }
 
+    pub const fn from_ptr<T: ?Sized>(ptr: *const T) -> VirtAddr {
+        unimplemented!()
+    }
+
     pub const fn zero() -> VirtAddr {
+        unimplemented!()
+    }
+
+    pub const fn as_ptr<T>(self) -> *const T {
+        unimplemented!()
+    }
+
+    pub const fn as_mut_ptr<T>(self) -> *mut T {
         unimplemented!()
     }
 

@@ -75,6 +75,7 @@ pub(crate) unsafe fn init_phase_1(boot_info: &BootInfo) {
 
 pub(crate) unsafe fn init_phase_2() {
     page::init_kernel_addrspace();
+    crate::mem::set_use_early_alloc(false);
     dev::ps2::init();
 }
 
