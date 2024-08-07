@@ -132,7 +132,14 @@ impl AddressSpace {
     }
 
     pub(crate) unsafe fn init_kernel_virtual_alloc(&mut self) {
-        fn find_free_regions_in(table: &PageTable, range: Range<usize>, start_addr: VirtAddr, level: u64, out: &mut VirtualAllocator, pending_region: &mut Option<VirtualAllocRegion>) {
+        fn find_free_regions_in(
+            table: &PageTable,
+            range: Range<usize>,
+            start_addr: VirtAddr,
+            level: u64,
+            out: &mut VirtualAllocator,
+            pending_region: &mut Option<VirtualAllocRegion>,
+        ) {
             let page_size = PAGE_SIZE << ((level - 1) * 9);
 
             for (i, j) in range.enumerate() {
