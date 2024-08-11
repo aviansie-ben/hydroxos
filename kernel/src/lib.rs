@@ -77,8 +77,17 @@ pub unsafe fn init_phase_2() {
     );
 
     arch::init_phase_2();
-    sched::init();
 
+    let (early_used, early_total) = mem::early::usage();
+    log!(
+        Debug,
+        "kernel",
+        "Early allocation pool usage: {}KiB/{}KiB",
+        early_used / 1024,
+        early_total / 1024
+    );
+
+    sched::init();
     log_device_tree();
 }
 

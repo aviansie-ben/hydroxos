@@ -147,3 +147,14 @@ pub unsafe fn realloc(ptr: *mut u8, old_size: usize, new_size: usize) -> *mut u8
         cmp::Ordering::Equal => ptr,
     }
 }
+
+pub fn usage() -> (usize, usize) {
+    (
+        unsafe {
+            EARLY_ALLOC_MARK
+                .load(Ordering::Relaxed)
+                .byte_offset_from(EARLY_ALLOC_AREA.get() as *const u8) as usize
+        },
+        EARLY_ALLOC_SIZE,
+    )
+}
