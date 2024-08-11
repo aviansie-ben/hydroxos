@@ -2,6 +2,7 @@ use core::arch::asm;
 use core::mem;
 
 use crate::util::OneShotManualInit;
+use crate::{log, options};
 
 pub const XSAVE_AVX_SIZE: usize = 256;
 pub const XSAVE_MAX_EXTENDED_SIZE: usize = XSAVE_AVX_SIZE + 1024;
@@ -14,6 +15,10 @@ static XSAVE: OneShotManualInit<XSaveInfo> = OneShotManualInit::uninit();
 
 pub fn xsave_enabled() -> bool {
     XSAVE.is_init()
+}
+
+pub fn avx_enabled() -> bool {
+    XSAVE.try_get().map_or(false, |xs| xs.avx_offset.is_some())
 }
 
 #[repr(usize)]
@@ -339,11 +344,19 @@ pub(super) unsafe fn init_xsave() {
         let mut xsave_feature_set_lo: u32 = 0x00000003; // x87 and SSE
         let xsave_feature_set_hi: u32 = 0x00000000;
 
-        if cpuid::get_minimum_features().supports(CpuFeature::AVX) {
-            xsave_feature_set_lo |= 0x00000004;
-            xsave.avx_offset = Some(current_offset);
-            current_offset += XSAVE_AVX_SIZE;
-        };
+        let avx_supported = cpuid::get_minimum_features().supports(CpuFeature::AVX);
+
+        match options::get().get_flag("enable_avx") {
+            Some(true) | None if avx_supported => {
+                xsave_feature_set_lo |= 0x00000004;
+                xsave.avx_offset = Some(current_offset);
+                current_offset += XSAVE_AVX_SIZE;
+            },
+            Some(true) => {
+                log!(Warning, "kernel", "AVX support requested by option, but not supported by the CPU");
+            },
+            _ => {},
+        }
 
         assert!(current_offset <= XSAVE_MAX_EXTENDED_SIZE);
 
@@ -364,8 +377,7 @@ pub(super) unsafe fn init_xsave() {
 mod test {
     use core::arch::asm;
 
-    use super::super::cpuid::{self, CpuFeature};
-    use super::SavedExtendedRegisters;
+    use super::{avx_enabled, SavedExtendedRegisters};
     use crate::test_util::skip;
 
     pub const ST_ZERO: [u8; 10] = [0; 10];
@@ -479,7 +491,7 @@ mod test {
 
     #[test_case]
     fn test_save_ymm() {
-        if !cpuid::get_minimum_features().supports(CpuFeature::AVX) {
+        if !avx_enabled() {
             skip("avx not supported");
             return;
         };
@@ -499,7 +511,7 @@ mod test {
 
     #[test_case]
     fn test_restore_ymm() {
-        if !cpuid::get_minimum_features().supports(CpuFeature::AVX) {
+        if !avx_enabled() {
             skip("avx not supported");
             return;
         };
