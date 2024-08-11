@@ -41,6 +41,7 @@ pub mod arch;
 pub mod cmd;
 pub mod io;
 pub mod mem;
+pub mod options;
 pub mod panic;
 pub mod sched;
 pub mod sync;
@@ -49,6 +50,8 @@ pub mod util;
 
 pub unsafe fn init_phase_1(boot_info: &'static BootInfo) {
     mem::early::init();
+    options::init();
+
     arch::init_phase_1(boot_info);
 
     mem::frame::init(boot_info);

@@ -1,6 +1,9 @@
 [build]
 target = ".cargo/x86_64-hydroxos-kernel.json"
 
+[env]
+HYDROXOS_OPTIONS = "serial_log"
+
 [target.'cfg(target_os = "none")']
 runner = "bootimage runner"
 

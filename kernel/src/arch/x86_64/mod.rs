@@ -7,6 +7,7 @@ pub use x86_64::{PhysAddr, VirtAddr};
 
 use crate::arch::dev::vgabuf::VgaTextBufferDevice;
 use crate::io::dev::DeviceNode;
+use crate::options;
 use crate::util::OneShotManualInit;
 
 pub mod cpuid;
@@ -55,8 +56,9 @@ pub(crate) unsafe fn init_phase_1(boot_info: &BootInfo) {
 
     let serial = dev::serial::init();
 
-    // TODO Should probably allow the user to control this
-    crate::log::init(serial);
+    if options::get().get_flag("serial_log").unwrap_or(false) {
+        crate::log::add_tty(serial);
+    }
 
     let vga_text = crate::io::dev::device_root()
         .dev()
