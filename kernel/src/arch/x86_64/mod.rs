@@ -46,8 +46,6 @@ unsafe fn init_bootstrap_tls(boot_info: &BootInfo) {
 }
 
 pub(crate) unsafe fn init_phase_1(boot_info: &BootInfo) {
-    use x86_64::instructions::interrupts;
-
     page::init_phys_mem_base(boot_info.physical_memory_offset as *mut u8);
     init_bootstrap_tls(boot_info);
     cpuid::init_bsp();
@@ -69,7 +67,6 @@ pub(crate) unsafe fn init_phase_1(boot_info: &BootInfo) {
     interrupt::init_bsp();
     pic::remap_pic(interrupt::IRQS_START, interrupt::IRQS_START + 0x8);
     pic::mask_all_irqs();
-    interrupts::enable();
 
     init_sse();
     regs::init_xsave();

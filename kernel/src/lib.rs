@@ -51,11 +51,15 @@ pub mod util;
 pub unsafe fn init_phase_1(boot_info: &'static BootInfo) {
     mem::early::init();
     options::init();
+    log::init();
 
     arch::init_phase_1(boot_info);
 
     mem::frame::init(boot_info);
-    log::init(io::vt::get_global_manager().dev().get_terminal(0).unwrap());
+    log::add_tty(io::vt::get_global_manager().dev().get_terminal(0).unwrap());
+
+    arch::interrupt::enable();
+    sched::run_soft_interrupts();
 }
 
 pub unsafe fn init_phase_2() {

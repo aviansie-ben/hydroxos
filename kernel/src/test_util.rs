@@ -81,13 +81,13 @@ pub fn init_test_log() {
     use crate::io::dev;
     use crate::log;
 
-    let serial = dev::get_device_by_name("::serial0").expect("missing test serial port");
-    let serial = dyn_dyn_cast!(move Device => Tty, serial).expect("test serial is not a tty");
+    let serial = dev::get_device_by_name("::serial0").expect("cannot find test tty");
+    let serial = dyn_dyn_cast!(move Device => Tty, serial).expect("test tty is not a valid tty");
 
-    log::remove_tty(&serial);
+    if log::remove_tty(&serial) {
+        log::add_tty(device_root().dev().add_device(DeviceNode::new(Box::from("testlog"), TestLogTty)));
+    }
     TEST_SERIAL.set(serial);
-
-    log::init(device_root().dev().add_device(DeviceNode::new(Box::from("testlog"), TestLogTty)));
 }
 
 pub fn run_tests(tests: &'static [&dyn Test]) -> ! {
