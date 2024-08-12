@@ -372,6 +372,11 @@ impl AddressSpace {
         }
 
         unsafe { self.set_page_internal(addr, mapping) };
+
+        if Cr3::read().0.start_address() == self.page_table {
+            // TODO Flush on other cores
+            x86_64::instructions::tlb::flush(addr);
+        }
     }
 
     #[track_caller]
@@ -385,6 +390,9 @@ impl AddressSpace {
         }
 
         unsafe { self.set_page_internal(addr, mapping) };
+
+        // TODO Flush on other cores
+        x86_64::instructions::tlb::flush(addr);
     }
 }
 
