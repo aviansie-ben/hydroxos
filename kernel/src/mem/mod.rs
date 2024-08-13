@@ -68,8 +68,11 @@ unsafe impl Allocator for PageBasedAlloc {
 
             for (i, &frame) in frames.iter().enumerate() {
                 unsafe {
+                    let page_ptr = start_ptr + (num_pages_allocated + i) * PAGE_SIZE;
+
+                    assert_eq!(addrspace.get_page(page_ptr), None);
                     addrspace.set_page_kernel(
-                        start_ptr + (num_pages_allocated + i) * PAGE_SIZE,
+                        page_ptr,
                         Some((frame, PageFlags::WRITEABLE)),
                     );
                 }
@@ -95,7 +98,9 @@ unsafe impl Allocator for PageBasedAlloc {
             let batch_num_frames = (num_pages - num_pages_freed).min(16);
 
             for (i, f) in frames.iter_mut().enumerate().take(batch_num_frames) {
-                *f = MaybeUninit::new(addrspace.get_page(ptr + (num_pages_freed + i) * PAGE_SIZE).unwrap().0);
+                let page = ptr + (num_pages_freed + i) * PAGE_SIZE;
+                *f = MaybeUninit::new(addrspace.get_page(page).unwrap().0);
+                addrspace.set_page_kernel(page, None);
             }
 
             unsafe {
