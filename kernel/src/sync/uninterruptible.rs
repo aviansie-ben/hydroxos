@@ -79,6 +79,26 @@ impl InterruptDisabler {
         INTERRUPT_DISABLER_STATE.set((InterruptDisabler::num_held(), false));
     }
 
+    // Forcibly drops all held InterruptDisablers and re-enables interrupts if they were previously enabled.
+    //
+    // # Safety
+    //
+    // The caller must ensure that all code holding InterruptDisablers on the current core will operate correctly if interrupts are
+    // re-enabled. Notably, any code that uses InterruptDisabler to ensure no interrupts use a particular thread local must not be
+    // on the stack.
+    //
+    // In general, this method is almost impossible to use safely and should be reserved only for debugging and testing purposes.
+    pub unsafe fn force_drop_all() {
+        let (_, was_enabled) = INTERRUPT_DISABLER_STATE.get();
+
+        INTERRUPT_DISABLER_STATE.set((0, was_enabled));
+
+        sched::run_soft_interrupts();
+        assert!(INTERRUPT_DISABLER_STATE.get().0 == 0);
+
+        interrupt::enable();
+    }
+
     /// Drops this interrupt-disabling guard without actually enabling interrupts. Returns `true` if interrupts would have been enabled had
     /// this guard been dropped normally and `false` otherwise.
     pub fn drop_without_enable(self) -> bool {
@@ -525,6 +545,7 @@ mod test {
     use cfg_if::cfg_if;
 
     use super::*;
+    use crate::test_util::has_test_failed;
     #[allow(unused_imports)]
     use crate::test_util::skip;
 
@@ -616,6 +637,11 @@ mod test {
     fn test_spinlock_tracking() {
         cfg_if! {
             if #[cfg(feature = "spinlock_tracking")] {
+                if has_test_failed() {
+                    skip("test is extremely flaky after other tests fail");
+                    return;
+                }
+
                 let lock1 = UninterruptibleSpinlock::new(());
                 let lock2 = UninterruptibleSpinlock::new(());
                 let lock3 = UninterruptibleSpinlock::new(());

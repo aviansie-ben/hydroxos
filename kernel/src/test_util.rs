@@ -132,6 +132,10 @@ pub fn skip(reason: &str) {
     IS_SKIPPED.store(true, Ordering::Relaxed);
 }
 
+pub fn has_test_failed() -> bool {
+    TEST_FAILED.load(Ordering::Relaxed)
+}
+
 #[cfg(not(feature = "check_arch_api"))]
 pub fn exit(code: u32) -> ! {
     use crate::arch::x86_64::dev::qemu_dbg_exit::QemuExitDevice;
@@ -161,9 +165,6 @@ pub fn handle_test_panic(info: &PanicInfo) -> ! {
         } else if !ptr::eq(&*Thread::current(), TEST_THREAD.load(Ordering::Relaxed)) {
             let _ = writeln!(serial, "Unable to continue testing, since panic didn't occur on the test thread");
             exit(1);
-        } else if InterruptDisabler::num_held() > 1 {
-            let _ = writeln!(serial, "Unable to continue testing due to live InterruptDisabler");
-            exit(1);
         } else if !TEST_FAILED.swap(true, Ordering::Relaxed) {
             let _ = writeln!(
                 serial,
@@ -171,7 +172,14 @@ pub fn handle_test_panic(info: &PanicInfo) -> ! {
             );
         }
 
-        drop(serial);
+        if InterruptDisabler::num_held() > 0 {
+            // Really, there's no way to actually make this perfectly safe. That being said, we're in a test environment so it shouldn't be
+            // a huge deal if we cause some weird crashes after this point since we only continue running tests on a best-effort basis.
+            unsafe {
+                InterruptDisabler::force_drop_all();
+            }
+        }
+
         unsafe {
             Thread::kill_current();
         }
