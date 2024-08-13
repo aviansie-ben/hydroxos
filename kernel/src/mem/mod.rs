@@ -60,6 +60,12 @@ unsafe impl Allocator for PageBasedAlloc {
                 }
 
                 unsafe {
+                    for i in 0..num_pages_freed {
+                        addrspace.set_page_kernel(
+                            start_ptr + i * PAGE_SIZE,
+                            None
+                        );
+                    }
                     addrspace.virtual_alloc().free(virt_region);
                 }
 
