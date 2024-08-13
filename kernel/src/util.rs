@@ -587,7 +587,7 @@ where
             }
 
             idx += 1;
-            mask = 0xff;
+            mask = !0;
         }
 
         None
