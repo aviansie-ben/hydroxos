@@ -1,11 +1,8 @@
 use core::alloc::{AllocError, Allocator, Layout};
 use core::ptr::NonNull;
 
-use super::frame::{self, FrameAllocator};
-use super::virt::VirtualAllocRegion;
 use super::PageBasedAlloc;
-use crate::arch::page::{AddressSpace, PAGE_SIZE};
-use crate::arch::{PhysAddr, VirtAddr};
+use crate::arch::page::PAGE_SIZE;
 use crate::sync::UninterruptibleSpinlock;
 use crate::util::FixedBitVector;
 
@@ -201,22 +198,19 @@ where
         while let Some(mut slab) = next_info {
             let slab = unsafe { slab.as_mut() };
 
-            // NOTE: Must read these *before* we deallocate anything, since slab will be inside
-            //       these pages when OWN_INFO is true.
-            let ptr = VirtAddr::from_ptr(slab.ptr.as_ptr());
-            let ptr_end = ptr + Self::PAGES_PER_SLAB * PAGE_SIZE;
-            next_info = slab.next;
-
-            let mut addrspace = AddressSpace::kernel();
-            let mut frames = [PhysAddr::zero(); pages_per_slab(SIZE)];
-
-            for (i, f) in frames.iter_mut().enumerate().take(Self::PAGES_PER_SLAB) {
-                *f = addrspace.get_page(ptr + i * PAGE_SIZE).expect("slab not mapped").0;
+            if slab.num_free as usize != slab.free.count() {
+                panic!("inconsistent # of free slots in slab");
+            } else if slab.num_free as usize != Self::OBJECTS_PER_SLAB {
+                panic!("slab freed while objects still allocated");
             }
 
+            // NOTE: Must read these *before* we deallocate anything, since slab will be inside
+            //       these pages when OWN_INFO is true.
+            let ptr = slab.ptr;
+            next_info = slab.next;
+
             unsafe {
-                frame::get_allocator().free_many(&frames);
-                addrspace.virtual_alloc().free(VirtualAllocRegion::new(ptr, ptr_end));
+                PageBasedAlloc.deallocate(ptr.cast(), Layout::from_size_align(Self::PAGES_PER_SLAB * PAGE_SIZE, PAGE_SIZE).unwrap());
             }
 
             if !OWN_INFO {

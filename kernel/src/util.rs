@@ -557,6 +557,16 @@ where
         }
     }
 
+    pub fn count(&self) -> usize {
+        let mut count = 0;
+
+        for word in self.contents.iter() {
+            count += word.count_ones() as usize;
+        }
+
+        count
+    }
+
     pub fn iter(&self) -> FixedBitVectorIter<N> {
         FixedBitVectorIter(self, 0)
     }
