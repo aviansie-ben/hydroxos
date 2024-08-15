@@ -491,6 +491,13 @@ impl<T> Drop for OneShotManualInit<T> {
     }
 }
 
+pub trait TrueCondition {}
+pub trait FalseCondition {}
+pub enum Condition<const C: bool> {}
+
+impl TrueCondition for Condition<true> {}
+impl FalseCondition for Condition<false> {}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FixedBitVector<const N: usize>
 where
@@ -622,6 +629,22 @@ where
         }
 
         FixedBitVector { contents }
+    }
+
+    pub fn grow<const M: usize>(self) -> FixedBitVector<M>
+    where
+        [(); M.div_ceil(32)]:,
+        Condition<{ M >= N }>: TrueCondition,
+    {
+        self.resize()
+    }
+
+    pub fn shrink<const M: usize>(self) -> FixedBitVector<M>
+    where
+        [(); M.div_ceil(32)]:,
+        Condition<{ M <= N }>: TrueCondition,
+    {
+        self.resize()
     }
 }
 
@@ -1257,7 +1280,7 @@ mod test {
     }
 
     #[test_case]
-    fn test_fixed_bv_resize() {
+    fn test_fixed_bv_grow() {
         assert_eq!(
             FixedBitVector::<48> {
                 contents: [0x8765_4321, 0x0000_cba9]
@@ -1265,7 +1288,7 @@ mod test {
             FixedBitVector::<48> {
                 contents: [0x8765_4321, 0x0000_cba9]
             }
-            .resize::<48>()
+            .grow::<48>()
         );
 
         assert_eq!(
@@ -1275,7 +1298,7 @@ mod test {
             FixedBitVector::<48> {
                 contents: [0x8765_4321, 0x0000_cba9]
             }
-            .resize::<64>()
+            .grow::<64>()
         );
 
         assert_eq!(
@@ -1285,7 +1308,20 @@ mod test {
             FixedBitVector::<48> {
                 contents: [0x8765_4321, 0x0000_cba9]
             }
-            .resize::<96>()
+            .grow::<96>()
+        );
+    }
+
+    #[test_case]
+    fn test_fixed_bv_shrink() {
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x8765_4321, 0x0000_cba9]
+            },
+            FixedBitVector::<48> {
+                contents: [0x8765_4321, 0x0000_cba9]
+            }
+            .shrink::<48>()
         );
 
         assert_eq!(
@@ -1295,7 +1331,7 @@ mod test {
             FixedBitVector::<48> {
                 contents: [0x8765_4321, 0x0000_cba9]
             }
-            .resize::<40>()
+            .shrink::<40>()
         );
 
         assert_eq!(
@@ -1303,7 +1339,7 @@ mod test {
             FixedBitVector::<48> {
                 contents: [0x8765_4321, 0x0000_cba9]
             }
-            .resize::<32>()
+            .shrink::<32>()
         );
 
         assert_eq!(
@@ -1311,7 +1347,15 @@ mod test {
             FixedBitVector::<48> {
                 contents: [0x8765_4321, 0x0000_cba9]
             }
-            .resize::<16>()
+            .shrink::<16>()
+        );
+
+        assert_eq!(
+            FixedBitVector::<0> { contents: [] },
+            FixedBitVector::<48> {
+                contents: [0x8765_4321, 0x0000_cba9]
+            }
+            .shrink::<0>()
         );
     }
 }
