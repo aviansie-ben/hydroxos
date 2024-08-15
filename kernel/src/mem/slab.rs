@@ -42,17 +42,31 @@ pub const fn pages_per_slab(size: usize) -> usize {
     }
 }
 
-pub struct SlabAllocInner<const SIZE: usize, const OWN_INFO: bool = false>
-where
-    [(); pages_per_slab(SIZE)]:,
-{
+pub struct SlabAllocInner {
     first: Option<NonNull<SlabInfo>>,
     first_free: Option<NonNull<SlabInfo>>,
 }
 
-unsafe impl<const SIZE: usize, const OWN_INFO: bool> Send for SlabAllocInner<SIZE, OWN_INFO> where [(); pages_per_slab(SIZE)]: {}
+unsafe impl Send for SlabAllocInner {}
 
-impl<const SIZE: usize, const OWN_INFO: bool> SlabAllocInner<SIZE, OWN_INFO>
+impl SlabAllocInner {
+    const fn new() -> Self {
+        Self {
+            first: None,
+            first_free: None,
+        }
+    }
+}
+
+pub struct SlabAlloc<const SIZE: usize, const OWN_INFO: bool = false>
+where
+    [(); pages_per_slab(SIZE)]:,
+{
+    name: &'static str,
+    inner: UninterruptibleSpinlock<SlabAllocInner>,
+}
+
+impl<const SIZE: usize, const OWN_INFO: bool> SlabAlloc<SIZE, OWN_INFO>
 where
     [(); pages_per_slab(SIZE)]:,
 {
@@ -60,133 +74,70 @@ where
     const SLAB_SIZE: usize = Self::PAGES_PER_SLAB * PAGE_SIZE;
     const OBJECTS_PER_SLAB: usize = (Self::SLAB_SIZE / SIZE);
 
-    pub const fn new() -> Self {
+    pub const fn new(name: &'static str) -> Self {
         if OWN_INFO {
             assert!(SIZE >= core::mem::size_of::<SlabInfo>());
         }
 
         Self {
-            first: None,
-            first_free: None,
+            name,
+            inner: UninterruptibleSpinlock::new(SlabAllocInner::new()),
         }
     }
 
-    pub fn alloc(&mut self) -> Option<NonNull<[u8; SIZE]>> {
-        let first_free = if let Some(first_free) = self.first_free {
-            first_free
-        } else {
-            let slab_layout = Layout::from_size_align(SIZE, PAGE_SIZE).expect("bad PAGE_SIZE");
-            let ptr = match PageBasedAlloc.allocate(slab_layout) {
-                Ok(ptr) => ptr.cast(),
-                Err(_) => {
-                    return None;
-                },
-            };
-
-            let slab = if OWN_INFO {
-                let mut slab = SlabInfo::new(ptr, Self::OBJECTS_PER_SLAB as u16);
-                slab.free.set(0, false);
-
-                let slab_ptr = slab.ptr.cast();
-                unsafe { slab_ptr.write(slab) };
-
-                slab_ptr
-            } else if let Some(slab_ptr) = SLAB_INFO.inner.lock().alloc() {
-                let slab_ptr = slab_ptr.cast();
-
-                unsafe {
-                    slab_ptr.write(SlabInfo::new(ptr, Self::OBJECTS_PER_SLAB as u16));
-                }
-                slab_ptr
-            } else {
-                unsafe {
-                    PageBasedAlloc.deallocate(ptr.cast(), slab_layout);
-                }
-                return None;
-            };
-
-            unsafe {
-                (*slab.as_ptr()).next = self.first;
-                (*slab.as_ptr()).next_free = self.first_free;
-            }
-            self.first = Some(slab);
-            self.first_free = Some(slab);
-
-            slab
-        };
-
-        let first_free = unsafe { &mut *first_free.as_ptr() };
-        let idx = first_free.free.find_next(0).expect("slab in freelist has no free slots");
-
-        first_free.free.set(idx, false);
-        first_free.num_free -= 1;
-
-        if first_free.num_free == 0 {
-            self.first_free = first_free.next_free.take();
-            first_free.next_free = None;
-        }
-
-        Some(unsafe { first_free.get_obj(idx, SIZE).cast() })
+    pub fn name(&self) -> &str {
+        self.name
     }
 
-    pub unsafe fn free(&mut self, ptr: NonNull<[u8; SIZE]>) {
-        let ptr = ptr.cast();
-        let mut next = self.first;
-
-        while let Some(slab) = next {
-            let slab = &mut *slab.as_ptr();
-            if ptr >= slab.ptr && ptr < slab.ptr.byte_add(Self::SLAB_SIZE) {
-                let slab_off = ptr.byte_offset_from(slab.ptr) as usize;
-                let idx = slab_off / SIZE;
-
-                if slab_off != idx * SIZE {
-                    panic!("attempt to free misaligned pointer");
-                }
-
-                if slab.free.set(idx, true) {
-                    panic!("double free detected");
-                }
-
-                slab.num_free += 1;
-                if slab.num_free == 1 {
-                    slab.next_free = self.first_free;
-                    self.first_free = Some(NonNull::from(slab));
-                }
-
-                return;
-            }
-
-            next = slab.next;
+    pub fn lock(&self) -> SlabAllocLock<SIZE, OWN_INFO> {
+        SlabAllocLock {
+            inner: self.inner.lock(),
         }
-
-        panic!("attempt to free pointer in the wrong slab allocator");
-    }
-
-    pub fn count(&self) -> (usize, usize) {
-        let mut total = 0;
-        let mut free = 0;
-
-        let mut next = self.first;
-
-        while let Some(slab) = next {
-            let slab = unsafe { &mut *slab.as_ptr() };
-
-            total += Self::OBJECTS_PER_SLAB;
-            free += slab.num_free as usize;
-
-            next = slab.next;
-        }
-
-        (total - free, total)
     }
 }
 
-impl<const SIZE: usize, const OWN_INFO: bool> Drop for SlabAllocInner<SIZE, OWN_INFO>
+unsafe impl<const SIZE: usize, const OWN_INFO: bool> Allocator for SlabAlloc<SIZE, OWN_INFO>
 where
     [(); pages_per_slab(SIZE)]:,
 {
+    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+        if layout.size() > SIZE || SIZE.next_multiple_of(layout.align()) != SIZE {
+            return Err(AllocError);
+        }
+
+        match self.lock().alloc() {
+            Some(ptr) => Ok(ptr),
+            None => Err(AllocError),
+        }
+    }
+
+    unsafe fn deallocate(&self, ptr: NonNull<u8>, _layout: Layout) {
+        self.lock().free(ptr.cast())
+    }
+
+    unsafe fn grow(&self, ptr: NonNull<u8>, _old_layout: Layout, new_layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+        if new_layout.size() > SIZE || SIZE.next_multiple_of(new_layout.align()) != SIZE {
+            return Err(AllocError);
+        }
+
+        Ok(NonNull::from_raw_parts(ptr.cast(), SIZE))
+    }
+
+    unsafe fn shrink(&self, ptr: NonNull<u8>, _old_layout: Layout, new_layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+        if SIZE.next_multiple_of(new_layout.align()) != SIZE {
+            return Err(AllocError);
+        }
+
+        Ok(NonNull::from_raw_parts(ptr.cast(), SIZE))
+    }
+}
+
+impl<const SIZE: usize, const OWN_INFO: bool> Drop for SlabAlloc<SIZE, OWN_INFO>
+where
+    [(); pages_per_slab(SIZE)]:
+{
     fn drop(&mut self) {
-        let mut next_info = self.first;
+        let mut next_info = self.inner.get_mut().first;
 
         while let Some(mut slab) = next_info {
             let slab = unsafe { slab.as_mut() };
@@ -211,74 +162,131 @@ where
 
             if !OWN_INFO {
                 unsafe {
-                    SLAB_INFO.inner.lock().free(NonNull::from(slab).cast());
+                    SLAB_INFO.lock().free(NonNull::from(slab).cast());
                 }
             }
         }
     }
 }
 
-pub struct SlabAlloc<const SIZE: usize, const OWN_INFO: bool = false>
+pub struct SlabAllocLock<'a, const SIZE: usize, const OWN_INFO: bool>
 where
     [(); pages_per_slab(SIZE)]:,
 {
-    name: &'static str,
-    inner: UninterruptibleSpinlock<SlabAllocInner<SIZE, OWN_INFO>>,
+    inner: UninterruptibleSpinlockGuard<'a, SlabAllocInner>,
 }
 
-impl<const SIZE: usize, const OWN_INFO: bool> SlabAlloc<SIZE, OWN_INFO>
+impl<'a, const SIZE: usize, const OWN_INFO: bool> SlabAllocLock<'a, SIZE, OWN_INFO>
 where
     [(); pages_per_slab(SIZE)]:,
 {
-    pub const fn new(name: &'static str) -> Self {
-        Self {
-            name,
-            inner: UninterruptibleSpinlock::new(SlabAllocInner::new()),
+    pub fn alloc(&mut self) -> Option<NonNull<[u8; SIZE]>> {
+        let first_free = if let Some(first_free) = self.inner.first_free {
+            first_free
+        } else {
+            let slab_layout = Layout::from_size_align(SIZE, PAGE_SIZE).expect("bad PAGE_SIZE");
+            let ptr = match PageBasedAlloc.allocate(slab_layout) {
+                Ok(ptr) => ptr.cast(),
+                Err(_) => {
+                    return None;
+                },
+            };
+
+            let slab = if OWN_INFO {
+                let mut slab = SlabInfo::new(ptr, SlabAlloc::<SIZE, OWN_INFO>::OBJECTS_PER_SLAB as u16);
+                slab.free.set(0, false);
+
+                let slab_ptr = slab.ptr.cast();
+                unsafe { slab_ptr.write(slab) };
+
+                slab_ptr
+            } else if let Some(slab_ptr) = SLAB_INFO.lock().alloc() {
+                let slab_ptr = slab_ptr.cast();
+
+                unsafe {
+                    slab_ptr.write(SlabInfo::new(ptr, SlabAlloc::<SIZE, OWN_INFO>::OBJECTS_PER_SLAB as u16));
+                }
+                slab_ptr
+            } else {
+                unsafe {
+                    PageBasedAlloc.deallocate(ptr.cast(), slab_layout);
+                }
+                return None;
+            };
+
+            unsafe {
+                (*slab.as_ptr()).next = self.inner.first;
+                (*slab.as_ptr()).next_free = self.inner.first_free;
+            }
+            self.inner.first = Some(slab);
+            self.inner.first_free = Some(slab);
+
+            slab
+        };
+
+        let first_free = unsafe { &mut *first_free.as_ptr() };
+        let idx = first_free.free.find_next(0).expect("slab in freelist has no free slots");
+
+        first_free.free.set(idx, false);
+        first_free.num_free -= 1;
+
+        if first_free.num_free == 0 {
+            self.inner.first_free = first_free.next_free.take();
+            first_free.next_free = None;
         }
+
+        Some(unsafe { first_free.get_obj(idx, SIZE).cast() })
     }
 
-    pub fn name(&self) -> &str {
-        self.name
-    }
+    pub unsafe fn free(&mut self, ptr: NonNull<[u8; SIZE]>) {
+        let ptr = ptr.cast();
+        let mut next = self.inner.first;
 
-    pub fn lock(&self) -> UninterruptibleSpinlockGuard<SlabAllocInner<SIZE, OWN_INFO>> {
-        self.inner.lock()
-    }
-}
+        while let Some(slab) = next {
+            let slab = &mut *slab.as_ptr();
+            if ptr >= slab.ptr && ptr < slab.ptr.byte_add(SlabAlloc::<SIZE, OWN_INFO>::SLAB_SIZE) {
+                let slab_off = ptr.byte_offset_from(slab.ptr) as usize;
+                let idx = slab_off / SIZE;
 
-unsafe impl<const SIZE: usize, const OWN_INFO: bool> Allocator for SlabAlloc<SIZE, OWN_INFO>
-where
-    [(); pages_per_slab(SIZE)]:,
-{
-    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
-        if layout.size() > SIZE || SIZE.next_multiple_of(layout.align()) != SIZE {
-            return Err(AllocError);
+                if slab_off != idx * SIZE {
+                    panic!("attempt to free misaligned pointer");
+                }
+
+                if slab.free.set(idx, true) {
+                    panic!("double free detected");
+                }
+
+                slab.num_free += 1;
+                if slab.num_free == 1 {
+                    slab.next_free = self.inner.first_free;
+                    self.inner.first_free = Some(NonNull::from(slab));
+                }
+
+                return;
+            }
+
+            next = slab.next;
         }
 
-        match self.inner.lock().alloc() {
-            Some(ptr) => Ok(ptr),
-            None => Err(AllocError),
-        }
+        panic!("attempt to free pointer in the wrong slab allocator");
     }
 
-    unsafe fn deallocate(&self, ptr: NonNull<u8>, _layout: Layout) {
-        self.inner.lock().free(ptr.cast())
-    }
+    pub fn count(&self) -> (usize, usize) {
+        let mut total = 0;
+        let mut free = 0;
 
-    unsafe fn grow(&self, ptr: NonNull<u8>, _old_layout: Layout, new_layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
-        if new_layout.size() > SIZE || SIZE.next_multiple_of(new_layout.align()) != SIZE {
-            return Err(AllocError);
+        let mut next = self.inner.first;
+
+        while let Some(slab) = next {
+            let slab = unsafe { &mut *slab.as_ptr() };
+
+            total += SlabAlloc::<SIZE, OWN_INFO>::OBJECTS_PER_SLAB;
+            free += slab.num_free as usize;
+
+            next = slab.next;
         }
 
-        Ok(NonNull::from_raw_parts(ptr.cast(), SIZE))
-    }
-
-    unsafe fn shrink(&self, ptr: NonNull<u8>, _old_layout: Layout, new_layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
-        if SIZE.next_multiple_of(new_layout.align()) != SIZE {
-            return Err(AllocError);
-        }
-
-        Ok(NonNull::from_raw_parts(ptr.cast(), SIZE))
+        (total - free, total)
     }
 }
 
@@ -312,32 +320,32 @@ mod test {
         let alloc = create_alloc::<8, false>();
 
         {
-            let alloc = alloc.inner.lock();
+            let alloc = alloc.lock();
 
-            assert_eq!(alloc.first, None);
-            assert_eq!(alloc.first_free, None);
+            assert_eq!(alloc.inner.first, None);
+            assert_eq!(alloc.inner.first_free, None);
             assert_eq!(alloc.count(), (0, 0));
         }
 
         let ptr = alloc.allocate(Layout::new::<u64>()).expect("allocation failure in slab");
 
         {
-            let alloc = alloc.inner.lock();
+            let alloc = alloc.lock();
 
-            let slab_info = unsafe { &*alloc.first.expect("should have a slab").as_ptr() };
-            assert_eq!(alloc.first_free, alloc.first);
+            let slab_info = unsafe { &*alloc.inner.first.expect("should have a slab").as_ptr() };
+            assert_eq!(alloc.inner.first_free, alloc.inner.first);
 
             assert_eq!(slab_info.next, None);
             assert_eq!(slab_info.next_free, None);
 
-            assert_eq!(slab_info.num_free as usize, SlabAllocInner::<8>::OBJECTS_PER_SLAB - 1);
-            assert_eq!(slab_info.free.count(), SlabAllocInner::<8>::OBJECTS_PER_SLAB - 1);
+            assert_eq!(slab_info.num_free as usize, SlabAlloc::<8>::OBJECTS_PER_SLAB - 1);
+            assert_eq!(slab_info.free.count(), SlabAlloc::<8>::OBJECTS_PER_SLAB - 1);
             assert!(!slab_info.free.get(0));
             assert_eq!(ptr.cast(), slab_info.ptr);
 
-            assert_eq!(alloc.count(), (1, SlabAllocInner::<8>::OBJECTS_PER_SLAB));
+            assert_eq!(alloc.count(), (1, SlabAlloc::<8>::OBJECTS_PER_SLAB));
 
-            for i in 0..SlabAllocInner::<8>::PAGES_PER_SLAB {
+            for i in 0..SlabAlloc::<8>::PAGES_PER_SLAB {
                 assert!(!AddressSpace::kernel()
                     .get_page(VirtAddr::from_ptr(ptr.as_ptr()) + i * PAGE_SIZE)
                     .is_none());
@@ -349,18 +357,18 @@ mod test {
         }
 
         {
-            let alloc = alloc.inner.lock();
+            let alloc = alloc.lock();
 
-            let slab_info = unsafe { &*alloc.first.expect("should have a slab").as_ptr() };
-            assert_eq!(alloc.first_free, alloc.first);
+            let slab_info = unsafe { &*alloc.inner.first.expect("should have a slab").as_ptr() };
+            assert_eq!(alloc.inner.first_free, alloc.inner.first);
 
             assert_eq!(slab_info.next, None);
             assert_eq!(slab_info.next_free, None);
 
-            assert_eq!(slab_info.num_free as usize, SlabAllocInner::<8>::OBJECTS_PER_SLAB);
-            assert_eq!(slab_info.free.count(), SlabAllocInner::<8>::OBJECTS_PER_SLAB);
+            assert_eq!(slab_info.num_free as usize, SlabAlloc::<8>::OBJECTS_PER_SLAB);
+            assert_eq!(slab_info.free.count(), SlabAlloc::<8>::OBJECTS_PER_SLAB);
 
-            assert_eq!(alloc.count(), (0, SlabAllocInner::<8>::OBJECTS_PER_SLAB));
+            assert_eq!(alloc.count(), (0, SlabAlloc::<8>::OBJECTS_PER_SLAB));
         }
     }
 
@@ -372,22 +380,22 @@ mod test {
         let ptr_b = alloc.allocate(Layout::new::<u64>()).expect("allocation failure in slab");
 
         {
-            let alloc = alloc.inner.lock();
+            let alloc = alloc.lock();
 
-            let slab_info = unsafe { &*alloc.first.expect("should have a slab").as_ptr() };
-            assert_eq!(alloc.first_free, alloc.first);
+            let slab_info = unsafe { &*alloc.inner.first.expect("should have a slab").as_ptr() };
+            assert_eq!(alloc.inner.first_free, alloc.inner.first);
 
             assert_eq!(slab_info.next, None);
             assert_eq!(slab_info.next_free, None);
 
-            assert_eq!(slab_info.num_free as usize, SlabAllocInner::<8>::OBJECTS_PER_SLAB - 2);
-            assert_eq!(slab_info.free.count(), SlabAllocInner::<8>::OBJECTS_PER_SLAB - 2);
+            assert_eq!(slab_info.num_free as usize, SlabAlloc::<8>::OBJECTS_PER_SLAB - 2);
+            assert_eq!(slab_info.free.count(), SlabAlloc::<8>::OBJECTS_PER_SLAB - 2);
             assert!(!slab_info.free.get(0));
             assert!(!slab_info.free.get(1));
             assert_eq!(ptr_a.cast(), slab_info.ptr);
             assert_eq!(ptr_b.cast(), unsafe { slab_info.ptr.byte_add(8) });
 
-            assert_eq!(alloc.count(), (2, SlabAllocInner::<8>::OBJECTS_PER_SLAB));
+            assert_eq!(alloc.count(), (2, SlabAlloc::<8>::OBJECTS_PER_SLAB));
         }
 
         unsafe {
@@ -395,39 +403,39 @@ mod test {
         }
 
         {
-            let alloc = alloc.inner.lock();
+            let alloc = alloc.lock();
 
-            let slab_info = unsafe { &*alloc.first.expect("should have a slab").as_ptr() };
-            assert_eq!(alloc.first_free, alloc.first);
+            let slab_info = unsafe { &*alloc.inner.first.expect("should have a slab").as_ptr() };
+            assert_eq!(alloc.inner.first_free, alloc.inner.first);
 
             assert_eq!(slab_info.next, None);
             assert_eq!(slab_info.next_free, None);
 
-            assert_eq!(slab_info.num_free as usize, SlabAllocInner::<8>::OBJECTS_PER_SLAB - 1);
-            assert_eq!(slab_info.free.count(), SlabAllocInner::<8>::OBJECTS_PER_SLAB - 1);
+            assert_eq!(slab_info.num_free as usize, SlabAlloc::<8>::OBJECTS_PER_SLAB - 1);
+            assert_eq!(slab_info.free.count(), SlabAlloc::<8>::OBJECTS_PER_SLAB - 1);
             assert!(!slab_info.free.get(1));
 
-            assert_eq!(alloc.count(), (1, SlabAllocInner::<8>::OBJECTS_PER_SLAB));
+            assert_eq!(alloc.count(), (1, SlabAlloc::<8>::OBJECTS_PER_SLAB));
         }
 
         let ptr_c = alloc.allocate(Layout::new::<u64>()).expect("allocation failure in slab");
         assert_eq!(ptr_c, ptr_a);
 
         {
-            let alloc = alloc.inner.lock();
+            let alloc = alloc.lock();
 
-            let slab_info = unsafe { &*alloc.first.expect("should have a slab").as_ptr() };
-            assert_eq!(alloc.first_free, alloc.first);
+            let slab_info = unsafe { &*alloc.inner.first.expect("should have a slab").as_ptr() };
+            assert_eq!(alloc.inner.first_free, alloc.inner.first);
 
             assert_eq!(slab_info.next, None);
             assert_eq!(slab_info.next_free, None);
 
-            assert_eq!(slab_info.num_free as usize, SlabAllocInner::<8>::OBJECTS_PER_SLAB - 2);
-            assert_eq!(slab_info.free.count(), SlabAllocInner::<8>::OBJECTS_PER_SLAB - 2);
+            assert_eq!(slab_info.num_free as usize, SlabAlloc::<8>::OBJECTS_PER_SLAB - 2);
+            assert_eq!(slab_info.free.count(), SlabAlloc::<8>::OBJECTS_PER_SLAB - 2);
             assert!(!slab_info.free.get(0));
             assert!(!slab_info.free.get(1));
 
-            assert_eq!(alloc.count(), (2, SlabAllocInner::<8>::OBJECTS_PER_SLAB));
+            assert_eq!(alloc.count(), (2, SlabAlloc::<8>::OBJECTS_PER_SLAB));
         }
 
         unsafe {
@@ -441,15 +449,15 @@ mod test {
         let alloc = create_alloc::<8, false>();
         let ptr_a = alloc.allocate(Layout::new::<u64>()).expect("allocation failure in slab");
 
-        for i in 1..SlabAllocInner::<8>::OBJECTS_PER_SLAB {
+        for i in 1..SlabAlloc::<8>::OBJECTS_PER_SLAB {
             assert_eq!(Ok(unsafe { ptr_a.byte_add(i * 8) }), alloc.allocate(Layout::new::<u64>()));
         }
 
         {
-            let alloc = alloc.inner.lock();
+            let alloc = alloc.lock();
 
-            let slab_info = unsafe { &*alloc.first.expect("should have a slab").as_ptr() };
-            assert_eq!(alloc.first_free, None);
+            let slab_info = unsafe { &*alloc.inner.first.expect("should have a slab").as_ptr() };
+            assert_eq!(alloc.inner.first_free, None);
 
             assert_eq!(slab_info.next, None);
             assert_eq!(slab_info.next_free, None);
@@ -460,22 +468,22 @@ mod test {
 
             assert_eq!(
                 alloc.count(),
-                (SlabAllocInner::<8>::OBJECTS_PER_SLAB, SlabAllocInner::<8>::OBJECTS_PER_SLAB)
+                (SlabAlloc::<8>::OBJECTS_PER_SLAB, SlabAlloc::<8>::OBJECTS_PER_SLAB)
             );
         }
 
         let ptr_b = alloc.allocate(Layout::new::<u64>()).expect("allocation failure in slab");
 
         {
-            let alloc = alloc.inner.lock();
+            let alloc = alloc.lock();
 
-            let slab_info = unsafe { &*alloc.first.expect("should have 2 slabs").as_ptr() };
-            assert_eq!(alloc.first_free, alloc.first);
+            let slab_info = unsafe { &*alloc.inner.first.expect("should have 2 slabs").as_ptr() };
+            assert_eq!(alloc.inner.first_free, alloc.inner.first);
 
             assert_eq!(slab_info.next_free, None);
 
-            assert_eq!(slab_info.num_free as usize, SlabAllocInner::<8>::OBJECTS_PER_SLAB - 1);
-            assert_eq!(slab_info.free.count(), SlabAllocInner::<8>::OBJECTS_PER_SLAB - 1);
+            assert_eq!(slab_info.num_free as usize, SlabAlloc::<8>::OBJECTS_PER_SLAB - 1);
+            assert_eq!(slab_info.free.count(), SlabAlloc::<8>::OBJECTS_PER_SLAB - 1);
             assert!(!slab_info.free.get(0));
             assert_eq!(ptr_b.cast(), slab_info.ptr);
 
@@ -490,7 +498,7 @@ mod test {
 
             assert_eq!(
                 alloc.count(),
-                (SlabAllocInner::<8>::OBJECTS_PER_SLAB + 1, SlabAllocInner::<8>::OBJECTS_PER_SLAB * 2)
+                (SlabAlloc::<8>::OBJECTS_PER_SLAB + 1, SlabAlloc::<8>::OBJECTS_PER_SLAB * 2)
             );
         }
 
@@ -499,20 +507,20 @@ mod test {
         }
 
         {
-            let alloc = alloc.inner.lock();
+            let alloc = alloc.lock();
 
-            let slab_info = unsafe { &*alloc.first.expect("should have 2 slabs").as_ptr() };
+            let slab_info = unsafe { &*alloc.inner.first.expect("should have 2 slabs").as_ptr() };
 
             assert_eq!(slab_info.next_free, None);
 
-            assert_eq!(slab_info.num_free as usize, SlabAllocInner::<8>::OBJECTS_PER_SLAB - 1);
-            assert_eq!(slab_info.free.count(), SlabAllocInner::<8>::OBJECTS_PER_SLAB - 1);
+            assert_eq!(slab_info.num_free as usize, SlabAlloc::<8>::OBJECTS_PER_SLAB - 1);
+            assert_eq!(slab_info.free.count(), SlabAlloc::<8>::OBJECTS_PER_SLAB - 1);
             assert!(!slab_info.free.get(0));
             assert_eq!(ptr_b.cast(), slab_info.ptr);
 
             let slab_info_2 = unsafe { &*slab_info.next.expect("should have 2 slabs").as_ptr() };
 
-            assert_eq!(alloc.first_free, Some(NonNull::from(slab_info_2)));
+            assert_eq!(alloc.inner.first_free, Some(NonNull::from(slab_info_2)));
             assert_eq!(slab_info_2.next, None);
             assert_eq!(slab_info_2.next_free, Some(NonNull::from(slab_info)));
 
@@ -523,7 +531,7 @@ mod test {
 
             assert_eq!(
                 alloc.count(),
-                (SlabAllocInner::<8>::OBJECTS_PER_SLAB, SlabAllocInner::<8>::OBJECTS_PER_SLAB * 2)
+                (SlabAlloc::<8>::OBJECTS_PER_SLAB, SlabAlloc::<8>::OBJECTS_PER_SLAB * 2)
             );
         }
 
@@ -531,15 +539,15 @@ mod test {
         assert_eq!(ptr_c, ptr_a);
 
         {
-            let alloc = alloc.inner.lock();
+            let alloc = alloc.lock();
 
-            let slab_info = unsafe { &*alloc.first.expect("should have 2 slabs").as_ptr() };
-            assert_eq!(alloc.first_free, alloc.first);
+            let slab_info = unsafe { &*alloc.inner.first.expect("should have 2 slabs").as_ptr() };
+            assert_eq!(alloc.inner.first_free, alloc.inner.first);
 
             assert_eq!(slab_info.next_free, None);
 
-            assert_eq!(slab_info.num_free as usize, SlabAllocInner::<8>::OBJECTS_PER_SLAB - 1);
-            assert_eq!(slab_info.free.count(), SlabAllocInner::<8>::OBJECTS_PER_SLAB - 1);
+            assert_eq!(slab_info.num_free as usize, SlabAlloc::<8>::OBJECTS_PER_SLAB - 1);
+            assert_eq!(slab_info.free.count(), SlabAlloc::<8>::OBJECTS_PER_SLAB - 1);
             assert!(!slab_info.free.get(0));
             assert_eq!(ptr_b.cast(), slab_info.ptr);
 
@@ -554,7 +562,7 @@ mod test {
 
             assert_eq!(
                 alloc.count(),
-                (SlabAllocInner::<8>::OBJECTS_PER_SLAB + 1, SlabAllocInner::<8>::OBJECTS_PER_SLAB * 2)
+                (SlabAlloc::<8>::OBJECTS_PER_SLAB + 1, SlabAlloc::<8>::OBJECTS_PER_SLAB * 2)
             );
         }
 
@@ -563,15 +571,15 @@ mod test {
         }
 
         {
-            let alloc = alloc.inner.lock();
+            let alloc = alloc.lock();
 
-            let slab_info = unsafe { &*alloc.first.expect("should have 2 slabs").as_ptr() };
-            assert_eq!(alloc.first_free, alloc.first);
+            let slab_info = unsafe { &*alloc.inner.first.expect("should have 2 slabs").as_ptr() };
+            assert_eq!(alloc.inner.first_free, alloc.inner.first);
 
             assert_eq!(slab_info.next_free, None);
 
-            assert_eq!(slab_info.num_free as usize, SlabAllocInner::<8>::OBJECTS_PER_SLAB);
-            assert_eq!(slab_info.free.count(), SlabAllocInner::<8>::OBJECTS_PER_SLAB);
+            assert_eq!(slab_info.num_free as usize, SlabAlloc::<8>::OBJECTS_PER_SLAB);
+            assert_eq!(slab_info.free.count(), SlabAlloc::<8>::OBJECTS_PER_SLAB);
             assert_eq!(ptr_b.cast(), slab_info.ptr);
 
             let slab_info_2 = unsafe { &*slab_info.next.expect("should have 2 slabs").as_ptr() };
@@ -585,12 +593,12 @@ mod test {
 
             assert_eq!(
                 alloc.count(),
-                (SlabAllocInner::<8>::OBJECTS_PER_SLAB, SlabAllocInner::<8>::OBJECTS_PER_SLAB * 2)
+                (SlabAlloc::<8>::OBJECTS_PER_SLAB, SlabAlloc::<8>::OBJECTS_PER_SLAB * 2)
             );
         }
 
         unsafe {
-            for i in 0..SlabAllocInner::<8>::OBJECTS_PER_SLAB {
+            for i in 0..SlabAlloc::<8>::OBJECTS_PER_SLAB {
                 alloc.deallocate(ptr_a.byte_add(i * 8).cast(), Layout::new::<u64>());
             }
         }
