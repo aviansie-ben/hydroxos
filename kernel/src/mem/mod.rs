@@ -61,10 +61,7 @@ unsafe impl Allocator for PageBasedAlloc {
 
                 unsafe {
                     for i in 0..num_pages_freed {
-                        addrspace.set_page_kernel(
-                            start_ptr + i * PAGE_SIZE,
-                            None
-                        );
+                        addrspace.set_page_kernel(start_ptr + i * PAGE_SIZE, None);
                     }
                     addrspace.virtual_alloc().free(virt_region);
                 }
@@ -77,10 +74,7 @@ unsafe impl Allocator for PageBasedAlloc {
                     let page_ptr = start_ptr + (num_pages_allocated + i) * PAGE_SIZE;
 
                     assert_eq!(addrspace.get_page(page_ptr), None);
-                    addrspace.set_page_kernel(
-                        page_ptr,
-                        Some((frame, PageFlags::WRITEABLE)),
-                    );
+                    addrspace.set_page_kernel(page_ptr, Some((frame, PageFlags::WRITEABLE)));
                 }
             }
 
