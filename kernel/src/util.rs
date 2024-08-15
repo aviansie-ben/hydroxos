@@ -603,6 +603,26 @@ where
 
         None
     }
+
+    pub fn resize<const M: usize>(self) -> FixedBitVector<M>
+    where
+        [(); M.div_ceil(32)]:,
+    {
+        let mut contents = [0; M.div_ceil(32)];
+
+        if M >= N {
+            (&mut contents[..N.div_ceil(32)]).clone_from_slice(&self.contents);
+        } else {
+            contents.clone_from_slice(&self.contents[..M.div_ceil(32)]);
+
+            let last_bits = M % 32;
+            if last_bits != 0 {
+                contents[FixedBitVector::<M>::INNER_SIZE - 1] &= (1 << last_bits) - 1;
+            }
+        }
+
+        FixedBitVector { contents }
+    }
 }
 
 impl<const N: usize> BitAndAssign for FixedBitVector<N>
@@ -1233,6 +1253,65 @@ mod test {
             } - FixedBitVector::<48> {
                 contents: [0x1248_1248, 0x0000_1248]
             }
+        );
+    }
+
+    #[test_case]
+    fn test_fixed_bv_resize() {
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x8765_4321, 0x0000_cba9]
+            },
+            FixedBitVector::<48> {
+                contents: [0x8765_4321, 0x0000_cba9]
+            }
+            .resize::<48>()
+        );
+
+        assert_eq!(
+            FixedBitVector::<64> {
+                contents: [0x8765_4321, 0x0000_cba9]
+            },
+            FixedBitVector::<48> {
+                contents: [0x8765_4321, 0x0000_cba9]
+            }
+            .resize::<64>()
+        );
+
+        assert_eq!(
+            FixedBitVector::<96> {
+                contents: [0x8765_4321, 0x0000_cba9, 0x0000_0000]
+            },
+            FixedBitVector::<48> {
+                contents: [0x8765_4321, 0x0000_cba9]
+            }
+            .resize::<96>()
+        );
+
+        assert_eq!(
+            FixedBitVector::<40> {
+                contents: [0x8765_4321, 0x0000_00a9]
+            },
+            FixedBitVector::<48> {
+                contents: [0x8765_4321, 0x0000_cba9]
+            }
+            .resize::<40>()
+        );
+
+        assert_eq!(
+            FixedBitVector::<32> { contents: [0x8765_4321] },
+            FixedBitVector::<48> {
+                contents: [0x8765_4321, 0x0000_cba9]
+            }
+            .resize::<32>()
+        );
+
+        assert_eq!(
+            FixedBitVector::<16> { contents: [0x0000_4321] },
+            FixedBitVector::<48> {
+                contents: [0x8765_4321, 0x0000_cba9]
+            }
+            .resize::<16>()
         );
     }
 }
