@@ -719,7 +719,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use super::ArrayDeque;
+    use super::{ArrayDeque, FixedBitVector};
 
     #[test_case]
     fn test_array_deque_new() {
@@ -829,5 +829,410 @@ mod test {
 
         assert_eq!(None, a.pop_back());
         assert_eq!(0, a.len());
+    }
+
+    #[test_case]
+    fn test_fixed_bv_init() {
+        let fbv = FixedBitVector::<32>::new(false);
+        assert_eq!(fbv.contents, [0]);
+
+        let fbv = FixedBitVector::<33>::new(false);
+        assert_eq!(fbv.contents, [0, 0]);
+
+        let fbv = FixedBitVector::<32>::new(true);
+        assert_eq!(fbv.contents, [!0]);
+
+        let fbv = FixedBitVector::<33>::new(true);
+        assert_eq!(fbv.contents, [!0, 1]);
+    }
+
+    #[test_case]
+    fn test_fixed_bv_get() {
+        assert!(!FixedBitVector::<48> {
+            contents: [0x0000_0000, 0x0000_0000]
+        }
+        .get(0));
+        assert!(FixedBitVector::<48> {
+            contents: [0x0000_0001, 0x0000_0000]
+        }
+        .get(0));
+
+        assert!(!FixedBitVector::<48> {
+            contents: [0x0000_0000, 0x0000_0000]
+        }
+        .get(31));
+        assert!(FixedBitVector::<48> {
+            contents: [0x8000_0000, 0x0000_0000]
+        }
+        .get(31));
+
+        assert!(!FixedBitVector::<48> {
+            contents: [0x0000_0000, 0x0000_0000]
+        }
+        .get(32));
+        assert!(FixedBitVector::<48> {
+            contents: [0x0000_0000, 0x0000_0001]
+        }
+        .get(32));
+
+        assert!(!FixedBitVector::<48> {
+            contents: [0x0000_0000, 0x0000_0000]
+        }
+        .get(47));
+        assert!(FixedBitVector::<48> {
+            contents: [0x0000_0000, 0x0000_8000]
+        }
+        .get(47));
+    }
+
+    #[test_case]
+    fn test_fixed_bv_set() {
+        let mut fbv = FixedBitVector::<48>::new(false);
+
+        assert!(!fbv.set(0, true));
+        assert_eq!(fbv.contents, [1, 0]);
+
+        assert!(fbv.set(0, true));
+        assert_eq!(fbv.contents, [1, 0]);
+
+        assert!(fbv.set(0, false));
+        assert_eq!(fbv.contents, [0, 0]);
+
+        assert!(!fbv.set(0, false));
+        assert_eq!(fbv.contents, [0, 0]);
+
+        assert!(!fbv.set(31, true));
+        assert_eq!(fbv.contents, [0x8000_0000, 0]);
+
+        assert!(fbv.set(31, true));
+        assert_eq!(fbv.contents, [0x8000_0000, 0]);
+
+        assert!(fbv.set(31, false));
+        assert_eq!(fbv.contents, [0, 0]);
+
+        assert!(!fbv.set(31, false));
+        assert_eq!(fbv.contents, [0, 0]);
+
+        assert!(!fbv.set(32, true));
+        assert_eq!(fbv.contents, [0, 1]);
+
+        assert!(fbv.set(32, true));
+        assert_eq!(fbv.contents, [0, 1]);
+
+        assert!(!fbv.set(47, true));
+        assert_eq!(fbv.contents, [0, 0x8001]);
+
+        assert!(fbv.set(47, true));
+        assert_eq!(fbv.contents, [0, 0x8001]);
+
+        assert!(fbv.set(32, false));
+        assert_eq!(fbv.contents, [0, 0x8000]);
+
+        assert!(!fbv.set(32, false));
+        assert_eq!(fbv.contents, [0, 0x8000]);
+
+        assert!(fbv.set(47, false));
+        assert_eq!(fbv.contents, [0, 0]);
+
+        assert!(!fbv.set(47, false));
+        assert_eq!(fbv.contents, [0, 0]);
+    }
+
+    #[test_case]
+    fn test_fixed_bv_count() {
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x0000_0000, 0x0000_0000]
+            }
+            .count(),
+            0
+        );
+
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x8000_0000, 0x0000_0000]
+            }
+            .count(),
+            1
+        );
+
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x0000_0000, 0x0000_8000]
+            }
+            .count(),
+            1
+        );
+
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x1111_1111, 0x0000_1111]
+            }
+            .count(),
+            12
+        );
+
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0xffff_ffff, 0x0000_ffff]
+            }
+            .count(),
+            48
+        );
+    }
+
+    #[test_case]
+    fn test_fixed_bv_find_next() {
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x0000_0000, 0x0000_0000]
+            }
+            .find_next(0),
+            None
+        );
+
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x0000_0001, 0x0000_0000]
+            }
+            .find_next(0),
+            Some(0)
+        );
+
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x0000_0001, 0x0000_0000]
+            }
+            .find_next(1),
+            None
+        );
+
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x0000_0003, 0x0000_0000]
+            }
+            .find_next(1),
+            Some(1)
+        );
+
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x8000_0000, 0x0000_0000]
+            }
+            .find_next(0),
+            Some(31)
+        );
+
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x8000_0000, 0x0000_ffff]
+            }
+            .find_next(0),
+            Some(31)
+        );
+
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x8000_0000, 0x0000_0000]
+            }
+            .find_next(32),
+            None
+        );
+
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x0000_0000, 0x0000_8000]
+            }
+            .find_next(0),
+            Some(47)
+        );
+
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x8000_0000, 0x0000_8000]
+            }
+            .find_next(32),
+            Some(47)
+        );
+
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x0000_0001, 0x0000_8000]
+            }
+            .find_next(1),
+            Some(47)
+        );
+
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0xffff_ffff, 0x0000_ffff]
+            }
+            .find_next(48),
+            None
+        );
+
+        assert_eq!(FixedBitVector::<32> { contents: [0xffff_ffff] }.find_next(32), None);
+    }
+
+    #[test_case]
+    fn test_fixed_bv_not() {
+        assert_eq!(
+            !FixedBitVector::<48> {
+                contents: [0x0000_0000, 0x0000_0000]
+            },
+            FixedBitVector::<48> {
+                contents: [0xffff_ffff, 0x0000_ffff]
+            }
+        );
+
+        assert_eq!(
+            !FixedBitVector::<48> {
+                contents: [0x1248_3000, 0x0000_8001]
+            },
+            FixedBitVector::<48> {
+                contents: [0xedb7_cfff, 0x0000_7ffe]
+            }
+        );
+    }
+
+    #[test_case]
+    fn test_fixed_bv_and() {
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x0000_0000, 0x0000_0000]
+            },
+            FixedBitVector::<48> {
+                contents: [0xf0f0_f0f0, 0x0000_0f0f]
+            } & FixedBitVector::<48> {
+                contents: [0x0f0f_0f0f, 0x0000_f0f0]
+            }
+        );
+
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x0000_0000, 0x0000_00ff]
+            },
+            FixedBitVector::<48> {
+                contents: [0x0000_0000, 0x0000_ffff]
+            } & FixedBitVector::<48> {
+                contents: [0xffff_ffff, 0x0000_00ff]
+            }
+        );
+
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x1248_edb7, 0x0000_f0f0]
+            },
+            FixedBitVector::<48> {
+                contents: [0xffff_ffff, 0x0000_ffff]
+            } & FixedBitVector::<48> {
+                contents: [0x1248_edb7, 0x0000_f0f0]
+            }
+        );
+    }
+
+    #[test_case]
+    fn test_fixed_bv_or() {
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x0000_0000, 0x0000_0000]
+            },
+            FixedBitVector::<48> {
+                contents: [0x0000_0000, 0x0000_0000]
+            } | FixedBitVector::<48> {
+                contents: [0x0000_0000, 0x0000_0000]
+            }
+        );
+
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x0000_ffff, 0x0000_ffff]
+            },
+            FixedBitVector::<48> {
+                contents: [0x0000_ffff, 0x0000_0000]
+            } | FixedBitVector::<48> {
+                contents: [0x0000_0000, 0x0000_ffff]
+            }
+        );
+
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x0000_ffff, 0x0000_0000]
+            },
+            FixedBitVector::<48> {
+                contents: [0x0000_0fff, 0x0000_0000]
+            } | FixedBitVector::<48> {
+                contents: [0x0000_fff0, 0x0000_0000]
+            }
+        );
+
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x0000_9669, 0x0000_0000]
+            },
+            FixedBitVector::<48> {
+                contents: [0x0000_1248, 0x0000_0000]
+            } | FixedBitVector::<48> {
+                contents: [0x0000_8421, 0x0000_0000]
+            }
+        );
+    }
+
+    #[test_case]
+    fn test_fixed_bv_diff() {
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x0000_0000, 0x0000_0000]
+            },
+            FixedBitVector::<48> {
+                contents: [0x0000_0000, 0x0000_0000]
+            } - FixedBitVector::<48> {
+                contents: [0x0000_0000, 0x0000_0000]
+            }
+        );
+
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x0000_0000, 0x0000_0000]
+            },
+            FixedBitVector::<48> {
+                contents: [0x0000_0000, 0x0000_0000]
+            } - FixedBitVector::<48> {
+                contents: [0xffff_ffff, 0x0000_ffff]
+            }
+        );
+
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0x0000_0000, 0x0000_0000]
+            },
+            FixedBitVector::<48> {
+                contents: [0xffff_ffff, 0x0000_ffff]
+            } - FixedBitVector::<48> {
+                contents: [0xffff_ffff, 0x0000_ffff]
+            }
+        );
+
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0xffff_ffff, 0x0000_ffff]
+            },
+            FixedBitVector::<48> {
+                contents: [0xffff_ffff, 0x0000_ffff]
+            } - FixedBitVector::<48> {
+                contents: [0x0000_0000, 0x0000_0000]
+            }
+        );
+
+        assert_eq!(
+            FixedBitVector::<48> {
+                contents: [0xedb7_6537, 0x0000_0000]
+            },
+            FixedBitVector::<48> {
+                contents: [0xffff_7777, 0x0000_0000]
+            } - FixedBitVector::<48> {
+                contents: [0x1248_1248, 0x0000_1248]
+            }
+        );
     }
 }
