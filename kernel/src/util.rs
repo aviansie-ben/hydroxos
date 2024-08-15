@@ -505,9 +505,20 @@ where
 {
     const INNER_SIZE: usize = N.div_ceil(32);
 
-    pub fn new() -> Self {
+    pub fn new(default: bool) -> Self {
         Self {
-            contents: [0; N.div_ceil(32)],
+            contents: if default {
+                let mut contents = [!0; N.div_ceil(32)];
+
+                let last_bits = N % 32;
+                if last_bits != 0 {
+                    contents[Self::INNER_SIZE - 1] &= (1 << last_bits) - 1;
+                }
+
+                contents
+            } else {
+                [0; N.div_ceil(32)]
+            },
         }
     }
 
