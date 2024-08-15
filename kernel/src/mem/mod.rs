@@ -197,6 +197,10 @@ enum AllocType {
 static USE_EARLY_ALLOC: AtomicBool = AtomicBool::new(true);
 
 pub(crate) fn set_use_early_alloc(use_early_alloc: bool) {
+    if !use_early_alloc {
+        slab::init();
+    }
+
     USE_EARLY_ALLOC.store(use_early_alloc, Ordering::Release);
 }
 

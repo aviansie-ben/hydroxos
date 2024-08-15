@@ -225,18 +225,10 @@ fn run_slab_cmd<T: Tty + ?Sized>(w: &mut TtyWriter<T>, args: &[&str]) -> Result<
 
     match args.get(0) {
         None | Some(&"stats") => {
-            let mut print_alloc = |name: &str, (allocated, total): (usize, usize)| writeln!(w, "{}: {}/{}", name, allocated, total);
-
-            print_alloc("SLAB_INFO", slab::SLAB_INFO.lock().count())?;
-            print_alloc("SLAB_8", slab::SLAB_8.lock().count())?;
-            print_alloc("SLAB_16", slab::SLAB_16.lock().count())?;
-            print_alloc("SLAB_32", slab::SLAB_32.lock().count())?;
-            print_alloc("SLAB_64", slab::SLAB_64.lock().count())?;
-            print_alloc("SLAB_128", slab::SLAB_128.lock().count())?;
-            print_alloc("SLAB_256", slab::SLAB_256.lock().count())?;
-            print_alloc("SLAB_512", slab::SLAB_512.lock().count())?;
-            print_alloc("SLAB_1024", slab::SLAB_1024.lock().count())?;
-            print_alloc("SLAB_2048", slab::SLAB_2048.lock().count())?;
+            for alloc in slab::registered_slab_allocs() {
+                let (allocated, total) = alloc.lock().count();
+                writeln!(w, "{}: {}/{}", alloc.name(), allocated, total)?;
+            }
         },
         Some(subcmd) => {
             writeln!(w, "unknown slab subcommand '{}'", subcmd)?;
