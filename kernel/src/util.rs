@@ -547,8 +547,8 @@ where
     }
 
     pub fn invert(&mut self) {
-        for i in 0..N {
-            self.contents[i] ^= !0;
+        for word in self.contents.iter_mut() {
+            *word ^= !0;
         }
 
         let last_bits = N % 32;
@@ -599,7 +599,7 @@ where
     [(); N.div_ceil(32)]:,
 {
     fn bitand_assign(&mut self, rhs: Self) {
-        for i in 0..N {
+        for i in 0..Self::INNER_SIZE {
             self.contents[i] &= rhs.contents[i];
         }
     }
@@ -624,7 +624,7 @@ where
     [(); N.div_ceil(32)]:,
 {
     fn bitor_assign(&mut self, rhs: Self) {
-        for i in 0..N {
+        for i in 0..Self::INNER_SIZE {
             self.contents[i] |= rhs.contents[i];
         }
     }
@@ -649,7 +649,7 @@ where
     [(); N.div_ceil(32)]:,
 {
     fn sub_assign(&mut self, rhs: Self) {
-        for i in 0..N {
+        for i in 0..Self::INNER_SIZE {
             self.contents[i] &= !rhs.contents[i];
         }
     }
