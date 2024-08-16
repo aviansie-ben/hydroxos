@@ -2,7 +2,7 @@ use alloc::sync::{Arc, Weak};
 use core::cell::UnsafeCell;
 use core::fmt;
 use core::mem::MaybeUninit;
-use core::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Deref, DerefMut, Not, Sub, SubAssign};
+use core::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Bound, Deref, DerefMut, Not, RangeBounds, Sub, SubAssign};
 use core::pin::Pin;
 use core::sync::atomic::{AtomicU8, Ordering};
 
@@ -564,6 +564,52 @@ where
         old_val
     }
 
+    #[track_caller]
+    pub fn set_range(&mut self, idx: impl RangeBounds<usize>, val: bool) {
+        let start = match idx.start_bound() {
+            Bound::Excluded(&start) if start == !0 => {
+                return;
+            },
+            Bound::Excluded(&start) => start + 1,
+            Bound::Included(&start) => start,
+            Bound::Unbounded => 0,
+        };
+
+        let end = match idx.end_bound() {
+            Bound::Excluded(&0) => {
+                return;
+            },
+            Bound::Excluded(&end) => end - 1,
+            Bound::Included(&end) => end,
+            Bound::Unbounded => N - 1,
+        };
+
+        if end <= start {
+            return;
+        }
+
+        let (start_idx, start_bit) = Self::get_bit_pos(start);
+        let (end_idx, end_bit) = Self::get_bit_pos(end);
+
+        for idx in start_idx..=end_idx {
+            let mut mask = !0;
+
+            if idx == start_idx && start_bit != 0 {
+                mask &= !((1 << start_bit) - 1);
+            }
+
+            if idx == end_idx && end_bit != 31 {
+                mask &= (1 << (end_bit + 1)) - 1
+            }
+
+            if val {
+                self.contents[idx] |= mask;
+            } else {
+                self.contents[idx] &= !mask;
+            }
+        }
+    }
+
     pub fn invert(&mut self) {
         for word in self.contents.iter_mut() {
             *word ^= !0;
@@ -979,6 +1025,117 @@ mod test {
 
         assert!(!fbv.set(47, false));
         assert_eq!(fbv.contents, [0, 0]);
+    }
+
+    #[test_case]
+    fn test_fixed_bv_set_range() {
+        let mut fbv = FixedBitVector::<48>::new(false);
+        fbv.set_range(0..0, true);
+        assert_eq!(fbv, FixedBitVector::<48> {
+            contents: [0x0000_0000, 0x0000_0000]
+        });
+
+        let mut fbv = FixedBitVector::<48>::new(false);
+        fbv.set_range(!0..0, true);
+        assert_eq!(fbv, FixedBitVector::<48> {
+            contents: [0x0000_0000, 0x0000_0000]
+        });
+
+        let mut fbv = FixedBitVector::<48>::new(false);
+        fbv.set_range(0..48, true);
+        assert_eq!(fbv, FixedBitVector::<48> {
+            contents: [0xffff_ffff, 0x0000_ffff]
+        });
+
+        let mut fbv = FixedBitVector::<48>::new(false);
+        fbv.set_range(0..40, true);
+        assert_eq!(fbv, FixedBitVector::<48> {
+            contents: [0xffff_ffff, 0x0000_00ff]
+        });
+
+        let mut fbv = FixedBitVector::<48>::new(false);
+        fbv.set_range(0..32, true);
+        assert_eq!(fbv, FixedBitVector::<48> {
+            contents: [0xffff_ffff, 0x0000_0000]
+        });
+
+        let mut fbv = FixedBitVector::<48>::new(false);
+        fbv.set_range(8..48, true);
+        assert_eq!(fbv, FixedBitVector::<48> {
+            contents: [0xffff_ff00, 0x0000_ffff]
+        });
+
+        let mut fbv = FixedBitVector::<48>::new(false);
+        fbv.set_range(8..40, true);
+        assert_eq!(fbv, FixedBitVector::<48> {
+            contents: [0xffff_ff00, 0x0000_00ff]
+        });
+
+        let mut fbv = FixedBitVector::<48>::new(false);
+        fbv.set_range(8..32, true);
+        assert_eq!(fbv, FixedBitVector::<48> {
+            contents: [0xffff_ff00, 0x0000_0000]
+        });
+
+        let mut fbv = FixedBitVector::<48>::new(false);
+        fbv.set_range(8..24, true);
+        assert_eq!(fbv, FixedBitVector::<48> {
+            contents: [0x00ff_ff00, 0x0000_0000]
+        });
+
+        let mut fbv = FixedBitVector::<48>::new(true);
+        fbv.set_range(0..0, false);
+        assert_eq!(fbv, FixedBitVector::<48> {
+            contents: [0xffff_ffff, 0x0000_ffff]
+        });
+
+        let mut fbv = FixedBitVector::<48>::new(true);
+        fbv.set_range(!0..0, false);
+        assert_eq!(fbv, FixedBitVector::<48> {
+            contents: [0xffff_ffff, 0x0000_ffff]
+        });
+
+        let mut fbv = FixedBitVector::<48>::new(true);
+        fbv.set_range(0..48, false);
+        assert_eq!(fbv, FixedBitVector::<48> {
+            contents: [0x0000_0000, 0x0000_0000]
+        });
+
+        let mut fbv = FixedBitVector::<48>::new(true);
+        fbv.set_range(0..40, false);
+        assert_eq!(fbv, FixedBitVector::<48> {
+            contents: [0x0000_0000, 0x0000_ff00]
+        });
+
+        let mut fbv = FixedBitVector::<48>::new(true);
+        fbv.set_range(0..32, false);
+        assert_eq!(fbv, FixedBitVector::<48> {
+            contents: [0x0000_0000, 0x0000_ffff]
+        });
+
+        let mut fbv = FixedBitVector::<48>::new(true);
+        fbv.set_range(8..48, false);
+        assert_eq!(fbv, FixedBitVector::<48> {
+            contents: [0x0000_00ff, 0x0000_0000]
+        });
+
+        let mut fbv = FixedBitVector::<48>::new(true);
+        fbv.set_range(8..40, false);
+        assert_eq!(fbv, FixedBitVector::<48> {
+            contents: [0x0000_00ff, 0x0000_ff00]
+        });
+
+        let mut fbv = FixedBitVector::<48>::new(true);
+        fbv.set_range(8..32, false);
+        assert_eq!(fbv, FixedBitVector::<48> {
+            contents: [0x0000_00ff, 0x0000_ffff]
+        });
+
+        let mut fbv = FixedBitVector::<48>::new(true);
+        fbv.set_range(8..24, false);
+        assert_eq!(fbv, FixedBitVector::<48> {
+            contents: [0xff00_00ff, 0x0000_ffff]
+        });
     }
 
     #[test_case]

@@ -24,7 +24,11 @@ impl SlabInfo {
             next: None,
             next_free: None,
             num_free: n,
-            free: FixedBitVector::new(true),
+            free: {
+                let mut free = FixedBitVector::new(false);
+                free.set_range(..(n as usize), true);
+                free
+            },
         }
     }
 
