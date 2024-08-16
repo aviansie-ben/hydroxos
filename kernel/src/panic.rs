@@ -6,6 +6,8 @@ pub fn show_panic_crash_screen(info: &PanicInfo) -> ! {
 
     use crate::arch::x86_64::dev::vgabuf::{Color, VgaTextBuffer, Writer};
 
+    crate::mem::set_use_early_alloc(true);
+
     let mut vga_buf = unsafe { VgaTextBuffer::for_primary_display() };
     let mut w = Writer::new(&mut vga_buf);
 
