@@ -6,7 +6,7 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::arch::asm;
-use core::cell::UnsafeCell;
+use core::cell::{SyncUnsafeCell, UnsafeCell};
 use core::fmt;
 use core::marker::PhantomData;
 use core::mem::{self, MaybeUninit};
@@ -21,7 +21,7 @@ use crate::arch::regs::SavedRegisters;
 use crate::sync::future::FutureWriter;
 use crate::sync::uninterruptible::{InterruptDisabler, UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
 use crate::sync::Future;
-use crate::util::{OneShotManualInit, PinWeak, SharedUnsafeCell};
+use crate::util::{OneShotManualInit, PinWeak};
 
 static NEXT_PID: AtomicU64 = AtomicU64::new(0);
 static KERNEL_PROCESS: OneShotManualInit<Pin<Arc<Process>>> = OneShotManualInit::uninit();
@@ -423,8 +423,8 @@ pub struct Thread {
     process: PinWeak<Process>,
     thread_id: u64,
     internal: UninterruptibleSpinlock<ThreadInternal>,
-    process_internal: SharedUnsafeCell<ThreadProcessInternal>,
-    wait_state: SharedUnsafeCell<ThreadWaitState>,
+    process_internal: SyncUnsafeCell<ThreadProcessInternal>,
+    wait_state: SyncUnsafeCell<ThreadWaitState>,
 }
 
 impl !Unpin for Thread {}
@@ -440,13 +440,13 @@ impl Thread {
                 join_writer: Some(FutureWriter::new()),
                 err_on_block: false,
             }),
-            process_internal: SharedUnsafeCell::new(ThreadProcessInternal {
+            process_internal: SyncUnsafeCell::new(ThreadProcessInternal {
                 prev: process_lock.guard.threads_tail,
                 next: None,
                 prev_ready: ptr::null(),
                 next_ready: ptr::null(),
             }),
-            wait_state: SharedUnsafeCell::new(ThreadWaitState::new()),
+            wait_state: SyncUnsafeCell::new(ThreadWaitState::new()),
         });
 
         process_lock.guard.next_thread_id += 1;

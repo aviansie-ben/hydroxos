@@ -1,36 +1,10 @@
 use alloc::sync::{Arc, Weak};
-use core::cell::UnsafeCell;
+use core::cell::SyncUnsafeCell;
 use core::fmt;
 use core::mem::MaybeUninit;
 use core::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Bound, Deref, DerefMut, Not, RangeBounds, Sub, SubAssign};
 use core::pin::Pin;
 use core::sync::atomic::{AtomicU8, Ordering};
-
-#[repr(transparent)]
-#[derive(Debug)]
-pub struct SharedUnsafeCell<T: ?Sized>(pub UnsafeCell<T>);
-
-impl<T> SharedUnsafeCell<T> {
-    pub const fn new(val: T) -> Self {
-        SharedUnsafeCell(UnsafeCell::new(val))
-    }
-}
-
-impl<T: ?Sized> Deref for SharedUnsafeCell<T> {
-    type Target = UnsafeCell<T>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<T: ?Sized> DerefMut for SharedUnsafeCell<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-unsafe impl<T> Sync for SharedUnsafeCell<T> where T: Sync {}
 
 #[repr(align(4096))]
 pub struct PageAligned<T>(T);
@@ -435,21 +409,21 @@ pub struct OneShotManualInit<T> {
     // 1: Initialization started, but not completed
     // 2: Initialized
     state: AtomicU8,
-    val: SharedUnsafeCell<MaybeUninit<T>>,
+    val: SyncUnsafeCell<MaybeUninit<T>>,
 }
 
 impl<T> OneShotManualInit<T> {
     pub const fn uninit() -> Self {
         Self {
             state: AtomicU8::new(0),
-            val: SharedUnsafeCell::new(MaybeUninit::uninit()),
+            val: SyncUnsafeCell::new(MaybeUninit::uninit()),
         }
     }
 
     pub const fn new(val: T) -> Self {
         Self {
             state: AtomicU8::new(2),
-            val: SharedUnsafeCell::new(MaybeUninit::new(val)),
+            val: SyncUnsafeCell::new(MaybeUninit::new(val)),
         }
     }
 

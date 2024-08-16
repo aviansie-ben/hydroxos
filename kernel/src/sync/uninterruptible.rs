@@ -25,14 +25,14 @@
 //! structure locked.
 
 use alloc::fmt;
-use core::cell::Cell;
+use core::cell::{Cell, SyncUnsafeCell};
 use core::mem;
 use core::ops::{Deref, DerefMut};
 use core::ptr;
 
 use crate::arch::interrupt;
 use crate::sched;
-use crate::util::{DebugOrDefault, SharedUnsafeCell};
+use crate::util::DebugOrDefault;
 
 #[thread_local]
 static INTERRUPT_DISABLER_STATE: Cell<(usize, bool)> = Cell::new((0, false));
@@ -349,12 +349,12 @@ impl<'a> Drop for RawSpinlockGuard<'a> {
 }
 
 /// A spinlock that keeps interrupts disabled on the local CPU core while it is locked.
-pub struct UninterruptibleSpinlock<T: ?Sized>(RawSpinlock, SharedUnsafeCell<T>);
+pub struct UninterruptibleSpinlock<T: ?Sized>(RawSpinlock, SyncUnsafeCell<T>);
 
 impl<T> UninterruptibleSpinlock<T> {
     /// Creates a new uninterruptible spinlock containing the provided value.
     pub const fn new(val: T) -> UninterruptibleSpinlock<T> {
-        UninterruptibleSpinlock(RawSpinlock::new(), SharedUnsafeCell::new(val))
+        UninterruptibleSpinlock(RawSpinlock::new(), SyncUnsafeCell::new(val))
     }
 
     /// Consumes this [`UninterruptibleSpinlock`], returning the underlying data.

@@ -14,6 +14,7 @@
 #![feature(negative_impls)]
 #![feature(ptr_metadata)]
 #![feature(slice_ptr_get)]
+#![feature(sync_unsafe_cell)]
 #![feature(thread_local)]
 #![feature(try_blocks)]
 #![feature(unsize)]

@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 use alloc::string::String;
+use core::cell::SyncUnsafeCell;
 
 use dyn_dyn::dyn_dyn_impl;
 
@@ -12,7 +13,7 @@ use crate::io::vt;
 use crate::sync::future::FutureWriter;
 use crate::sync::uninterruptible::{UninterruptibleSpinlockGuard, UninterruptibleSpinlockReadGuard};
 use crate::sync::{Future, UninterruptibleSpinlock};
-use crate::util::{ArrayDeque, SharedUnsafeCell};
+use crate::util::ArrayDeque;
 use crate::{log, sched};
 
 mod scancode_2_map;
@@ -221,7 +222,7 @@ struct Ps2KeyboardInternals {
 
 #[derive(Debug)]
 pub struct Ps2Keyboard {
-    internal: SharedUnsafeCell<Ps2KeyboardInternals>,
+    internal: SyncUnsafeCell<Ps2KeyboardInternals>,
     controller: DeviceRef<Ps2Controller>,
 }
 
@@ -368,7 +369,7 @@ struct Ps2MouseInternals {}
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct Ps2Mouse {
-    internal: SharedUnsafeCell<Ps2MouseInternals>,
+    internal: SyncUnsafeCell<Ps2MouseInternals>,
     controller: DeviceRef<Ps2Controller>,
 }
 
@@ -522,7 +523,7 @@ pub unsafe fn init() -> Option<DeviceRef<Ps2Controller>> {
             Some(
                 DeviceNode::new(Box::from("keyboard"), Ps2Keyboard {
                     controller: controller.clone(),
-                    internal: SharedUnsafeCell::new(Ps2KeyboardInternals {
+                    internal: SyncUnsafeCell::new(Ps2KeyboardInternals {
                         lock_state: KeyboardLockState::none(),
                         mod_state: ModifierState::none(),
                         held_keys: Ps2KeyboardHeldKeys::new(),
@@ -551,7 +552,7 @@ pub unsafe fn init() -> Option<DeviceRef<Ps2Controller>> {
             Some(
                 DeviceNode::new(Box::from("mouse"), Ps2Mouse {
                     controller: controller.clone(),
-                    internal: SharedUnsafeCell::new(Ps2MouseInternals {}),
+                    internal: SyncUnsafeCell::new(Ps2MouseInternals {}),
                 })
                 .connect(DeviceRef::<Ps2Controller>::downgrade(&controller)),
             )

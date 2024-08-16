@@ -1,4 +1,5 @@
 use core::alloc::{AllocError, Allocator, Layout};
+use core::cell::SyncUnsafeCell;
 use core::marker::PhantomData;
 use core::mem;
 use core::ptr::NonNull;
@@ -7,7 +8,7 @@ use super::PageBasedAlloc;
 use crate::arch::page::PAGE_SIZE;
 use crate::sync::uninterruptible::UninterruptibleSpinlockGuard;
 use crate::sync::UninterruptibleSpinlock;
-use crate::util::{FixedBitVector, SharedUnsafeCell};
+use crate::util::FixedBitVector;
 
 pub struct SlabInfo {
     ptr: NonNull<()>,
@@ -75,7 +76,7 @@ unsafe impl Sync for SlabAllocListInfo {}
 pub struct SlabAllocAny {
     name: &'static str,
     obj_size: usize,
-    list_info: SharedUnsafeCell<SlabAllocListInfo>,
+    list_info: SyncUnsafeCell<SlabAllocListInfo>,
     slabs: UninterruptibleSpinlock<SlabList>,
 }
 
@@ -84,7 +85,7 @@ impl SlabAllocAny {
         Self {
             name,
             obj_size,
-            list_info: SharedUnsafeCell::new(SlabAllocListInfo {
+            list_info: SyncUnsafeCell::new(SlabAllocListInfo {
                 registered: false,
                 next: None,
             }),

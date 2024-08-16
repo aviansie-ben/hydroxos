@@ -1,12 +1,12 @@
+use core::cell::SyncUnsafeCell;
 use core::sync::atomic::{AtomicPtr, Ordering};
 use core::{cmp, ptr};
 
-use crate::util::{PageAligned, SharedUnsafeCell};
+use crate::util::PageAligned;
 
 const EARLY_ALLOC_SIZE: usize = 1024 * 1024;
 
-static EARLY_ALLOC_AREA: PageAligned<SharedUnsafeCell<[u8; EARLY_ALLOC_SIZE]>> =
-    PageAligned::new(SharedUnsafeCell::new([0; EARLY_ALLOC_SIZE]));
+static EARLY_ALLOC_AREA: PageAligned<SyncUnsafeCell<[u8; EARLY_ALLOC_SIZE]>> = PageAligned::new(SyncUnsafeCell::new([0; EARLY_ALLOC_SIZE]));
 static EARLY_ALLOC_MARK: AtomicPtr<u8> = AtomicPtr::new(ptr::null_mut());
 
 pub fn init() {
