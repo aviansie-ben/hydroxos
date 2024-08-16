@@ -13,22 +13,22 @@ use crate::mem::frame::{self, FrameAllocator};
 use crate::mem::virt::{VirtualAllocRegion, VirtualAllocator};
 use crate::sync::uninterruptible::UninterruptibleSpinlockGuard;
 use crate::sync::UninterruptibleSpinlock;
-use crate::util::OneShotManualInit;
+use crate::util::{OneShotManualInit, SyncPtr};
 
 pub const PAGE_SIZE: usize = 4096;
 pub const IS_PHYS_MEM_ALWAYS_MAPPED: bool = true;
 
 pub use crate::arch::api::page::PageFlags;
 
-static PHYS_MEM_BASE: OneShotManualInit<*mut u8> = OneShotManualInit::uninit();
+static PHYS_MEM_BASE: OneShotManualInit<SyncPtr<u8>> = OneShotManualInit::uninit();
 static KERNEL_ADDRESS_SPACE: OneShotManualInit<UninterruptibleSpinlock<AddressSpace>> = OneShotManualInit::uninit();
 
 pub fn init_phys_mem_base(phys_mem_base: *mut u8) {
-    PHYS_MEM_BASE.set(phys_mem_base);
+    PHYS_MEM_BASE.set(SyncPtr::new(phys_mem_base));
 }
 
 pub fn get_phys_mem_base() -> *mut u8 {
-    *PHYS_MEM_BASE.get()
+    **PHYS_MEM_BASE.get()
 }
 
 #[derive(Debug)]

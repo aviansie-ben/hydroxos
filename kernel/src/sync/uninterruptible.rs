@@ -418,6 +418,8 @@ impl<T: ?Sized> UninterruptibleSpinlock<T> {
     }
 }
 
+unsafe impl<T: ?Sized> Sync for UninterruptibleSpinlock<T> where T: Send {}
+
 impl<T: ?Sized> fmt::Debug for UninterruptibleSpinlock<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "UninterruptibleSpinlock@{:p}(", self)?;

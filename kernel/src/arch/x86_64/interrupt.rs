@@ -146,7 +146,7 @@ pub const EXT_START: u8 = 0x30;
 
 pub const NUM_IRQS: usize = (EXT_START - IRQS_START) as usize;
 
-pub type InterruptHandler = Box<dyn FnMut(&mut InterruptFrame) + Send>;
+pub type InterruptHandler = Box<dyn Fn(&mut InterruptFrame) + Send + Sync>;
 const EMPTY_INTERRUPT: Option<InterruptHandler> = None;
 
 static IRQ_HANDLERS: UninterruptibleSpinlock<[Option<InterruptHandler>; NUM_IRQS]> =

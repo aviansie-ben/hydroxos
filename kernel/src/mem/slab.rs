@@ -69,6 +69,9 @@ struct SlabAllocListInfo {
     next: Option<NonNull<SlabAllocAny>>,
 }
 
+unsafe impl Send for SlabAllocListInfo {}
+unsafe impl Sync for SlabAllocListInfo {}
+
 pub struct SlabAllocAny {
     name: &'static str,
     obj_size: usize,
@@ -398,6 +401,8 @@ struct SlabAllocList {
     first: Option<NonNull<SlabAllocAny>>,
     last: Option<NonNull<SlabAllocAny>>,
 }
+
+unsafe impl Send for SlabAllocList {}
 
 pub struct SlabAllocListIter {
     next: Option<NonNull<SlabAllocAny>>,

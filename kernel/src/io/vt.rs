@@ -190,6 +190,8 @@ impl VirtualTerminalInternals {
     }
 }
 
+unsafe impl Send for VirtualTerminalInternals {}
+
 #[derive(Debug)]
 pub struct VirtualTerminal(UninterruptibleSpinlock<VirtualTerminalInternals>);
 

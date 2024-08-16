@@ -30,8 +30,7 @@ impl<T: ?Sized> DerefMut for SharedUnsafeCell<T> {
     }
 }
 
-unsafe impl<T> Sync for SharedUnsafeCell<T> {}
-unsafe impl<T> Send for SharedUnsafeCell<T> {}
+unsafe impl<T> Sync for SharedUnsafeCell<T> where T: Sync {}
 
 #[repr(align(4096))]
 pub struct PageAligned<T>(T);
@@ -138,22 +137,37 @@ impl<T: ?Sized> PinWeak<T> {
 }
 
 #[derive(Debug)]
-pub struct SendPtr<T: ?Sized>(*const T);
-unsafe impl<T: ?Sized> Send for SendPtr<T> {}
-impl<T: ?Sized> Copy for SendPtr<T> {}
-impl<T: ?Sized> Clone for SendPtr<T> {
+pub struct SyncPtr<T: ?Sized>(*mut T);
+unsafe impl<T: ?Sized> Send for SyncPtr<T> {}
+unsafe impl<T: ?Sized> Sync for SyncPtr<T> {}
+impl<T: ?Sized> Copy for SyncPtr<T> {}
+impl<T: ?Sized> Clone for SyncPtr<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T: ?Sized> SendPtr<T> {
-    pub fn new(ptr: *const T) -> Self {
-        SendPtr(ptr)
+impl<T: ?Sized> SyncPtr<T> {
+    pub const fn new(ptr: *mut T) -> Self {
+        SyncPtr(ptr)
     }
 
-    pub fn unwrap(self) -> *const T {
+    pub const fn unwrap(self) -> *mut T {
         self.0
+    }
+}
+
+impl<T: ?Sized> Deref for SyncPtr<T> {
+    type Target = *mut T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: ?Sized> DerefMut for SyncPtr<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 

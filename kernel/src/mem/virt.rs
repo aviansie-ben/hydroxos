@@ -563,6 +563,8 @@ impl VirtualAllocator {
     }
 }
 
+unsafe impl Send for VirtualAllocator {}
+
 struct VirtualAllocatorRegionIter<'a>(Option<&'a VirtualAllocPage>, usize);
 
 impl<'a> Iterator for VirtualAllocatorRegionIter<'a> {

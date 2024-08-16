@@ -14,7 +14,7 @@ use crate::sched;
 use crate::sched::task::Thread;
 use crate::sched::wait::ThreadWaitList;
 use crate::sync::uninterruptible::{UninterruptibleSpinlock, UninterruptibleSpinlockGuard};
-use crate::util::SendPtr;
+use crate::util::SyncPtr;
 
 type FutureWaitAction = dyn FnOnce(*const (), &mut FutureWaitGenericLock) + Send;
 
@@ -63,7 +63,7 @@ pub struct FutureWait<T> {
 }
 
 impl<T> FutureWait<T> {
-    fn new(wait_refs: usize, val_refs: usize) -> *const FutureWait<T> {
+    fn new(wait_refs: usize, val_refs: usize) -> *mut FutureWait<T> {
         Box::into_raw(Box::new(FutureWait {
             generic: FutureWaitGeneric {
                 state: UninterruptibleSpinlock::new(FutureWaitGenericState {
@@ -464,7 +464,7 @@ impl Future<()> {
     /// Creates a future that resolves once all of the futures in the provided iterator have resolved.
     pub fn all(fs: impl IntoIterator<Item = Future<()>>) -> Future<()> {
         let (future, writer) = Future::new();
-        let wait = SendPtr::new(writer.into_raw());
+        let wait = SyncPtr::new(writer.into_raw());
 
         unsafe {
             (*(*wait.unwrap()).val.get()) = MaybeUninit::new(usize::MAX);
@@ -509,7 +509,7 @@ impl Future<()> {
     /// which could never resolve, which is generally not desired behaviour and could lead to threads hanging in an uninterruptible state.
     pub fn any(fs: impl IntoIterator<Item = Future<()>>) -> Result<Future<usize>, ()> {
         let (future, writer) = Future::new();
-        let wait = SendPtr::new(writer.into_raw());
+        let wait = SyncPtr::new(writer.into_raw());
 
         let mut was_empty = true;
         for (i, f) in fs.into_iter().enumerate() {
@@ -580,7 +580,7 @@ impl<T: Send + Sync + Clone> Clone for Future<T> {
 /// this type except by calling [`FutureWriter::finish`] will panic.
 #[must_use]
 pub struct FutureWriter<T> {
-    wait: *const FutureWait<T>,
+    wait: *mut FutureWait<T>,
     _data: PhantomData<FutureWait<T>>,
 }
 
@@ -628,13 +628,13 @@ impl<T> FutureWriter<T> {
         };
     }
 
-    pub fn into_raw(self) -> *const FutureWait<T> {
+    pub fn into_raw(self) -> *mut FutureWait<T> {
         let wait = self.wait;
         mem::forget(self);
         wait
     }
 
-    pub unsafe fn from_raw(ptr: *const FutureWait<T>) -> FutureWriter<T> {
+    pub unsafe fn from_raw(ptr: *mut FutureWait<T>) -> FutureWriter<T> {
         FutureWriter {
             wait: ptr,
             _data: PhantomData,
