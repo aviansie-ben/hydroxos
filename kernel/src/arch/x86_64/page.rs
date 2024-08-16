@@ -422,7 +422,9 @@ pub(super) unsafe fn init_kernel_addrspace() {
         for i in 256..512 {
             let i = PageTableIndex::new(i);
             if kl4_table.level_4_table()[i].is_unused() {
-                let kl3_table = frame_alloc.alloc_one().unwrap();
+                let kl3_table = frame_alloc
+                    .alloc_one()
+                    .expect("Out of memory while allocating kernel L3 page tables");
                 ptr::write_bytes(
                     get_phys_mem_ptr_slice(kl3_table, PAGE_SIZE).ptr().get_unchecked_mut(0) as *mut u8,
                     0,
