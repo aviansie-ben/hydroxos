@@ -300,6 +300,7 @@ impl<'a, T, const OWN_INFO: bool> SlabAllocLock<'a, T, OWN_INFO> {
             let slab = if OWN_INFO {
                 let mut slab = SlabInfo::new(ptr, SlabAlloc::<T, OWN_INFO>::OBJECTS_PER_SLAB as u16);
                 slab.free.set(0, false);
+                slab.num_free -= 1;
 
                 let slab_ptr = slab.ptr.cast();
                 unsafe { slab_ptr.write(slab) };
