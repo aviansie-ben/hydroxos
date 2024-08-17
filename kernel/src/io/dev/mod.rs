@@ -3,12 +3,11 @@ use alloc::string::String;
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
-use core::fmt;
 use core::fmt::Debug;
 use core::marker::Unsize;
 use core::ops::{CoerceUnsized, Deref};
-use core::ptr;
 use core::ptr::Pointee;
+use core::{fmt, ptr};
 
 use dyn_dyn::{dyn_dyn_base, dyn_dyn_cast, dyn_dyn_impl, DowncastUnchecked, DynDynBase, DynDynTable, GetDynDynTable};
 

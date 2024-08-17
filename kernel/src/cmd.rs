@@ -1,8 +1,9 @@
 // Many functions here are accessing lists of arguments and I'd prefer to be consistent in how elements are accessed
 #![allow(clippy::get_first)]
 
+use alloc::string::String;
+use alloc::vec::Vec;
 use alloc::{format, vec};
-use alloc::{string::String, vec::Vec};
 use core::fmt::{self, Write};
 
 use crate::io::dev;

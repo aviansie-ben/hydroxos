@@ -7,12 +7,11 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::arch::asm;
 use core::cell::{SyncUnsafeCell, UnsafeCell};
-use core::fmt;
 use core::marker::PhantomData;
 use core::mem::{self, MaybeUninit};
 use core::pin::Pin;
-use core::ptr;
 use core::sync::atomic::{AtomicU64, Ordering};
+use core::{fmt, ptr};
 
 use super::wait::{ThreadWaitList, ThreadWaitState};
 use crate::arch::interrupt::InterruptFrame;

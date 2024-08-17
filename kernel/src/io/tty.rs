@@ -1,10 +1,9 @@
 use alloc::collections::VecDeque;
 use core::fmt;
 
-use crate::{
-    sync::{future::FutureWriter, Future},
-    util::ArrayDeque,
-};
+use crate::sync::future::FutureWriter;
+use crate::sync::Future;
+use crate::util::ArrayDeque;
 
 pub trait Tty: Send + Sync {
     unsafe fn write(&self, bytes: *const [u8]) -> Future<Result<(), ()>>;

@@ -26,9 +26,8 @@
 
 use alloc::fmt;
 use core::cell::{Cell, SyncUnsafeCell};
-use core::mem;
 use core::ops::{Deref, DerefMut};
-use core::ptr;
+use core::{mem, ptr};
 
 use crate::arch::interrupt;
 use crate::sched;

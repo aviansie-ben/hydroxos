@@ -4,8 +4,7 @@ use dyn_dyn::dyn_dyn_impl;
 use x86_64::instructions::port::Port;
 
 use super::super::page::PhysMemPtr;
-use crate::arch::page;
-use crate::arch::PhysAddr;
+use crate::arch::{page, PhysAddr};
 use crate::io::ansi::AnsiColor;
 use crate::io::dev::Device;
 use crate::io::vt::{TerminalDisplay, VTChar, VirtualTerminalInternals};

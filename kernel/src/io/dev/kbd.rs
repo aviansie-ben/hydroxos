@@ -1,10 +1,9 @@
 use alloc::string::String;
 
 use super::Device;
-use crate::{
-    io::keymap::{CommonKeycode, Keycode, KeycodeMap},
-    sync::{uninterruptible::UninterruptibleSpinlockReadGuard, Future},
-};
+use crate::io::keymap::{CommonKeycode, Keycode, KeycodeMap};
+use crate::sync::uninterruptible::UninterruptibleSpinlockReadGuard;
+use crate::sync::Future;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KeyboardLockState {

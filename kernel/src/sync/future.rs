@@ -4,11 +4,9 @@ use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::UnsafeCell;
-use core::fmt;
 use core::marker::PhantomData;
-use core::mem;
 use core::mem::MaybeUninit;
-use core::ptr;
+use core::{fmt, mem, ptr};
 
 use crate::sched;
 use crate::sched::task::Thread;

@@ -5,9 +5,9 @@ use core::cell::SyncUnsafeCell;
 use dyn_dyn::dyn_dyn_impl;
 
 use crate::arch::{interrupt, pic};
+use crate::io::dev::hub::DeviceHub;
 use crate::io::dev::kbd::{KeyPress, Keyboard, KeyboardError, KeyboardHeldKeys, KeyboardLockState, ModifierState};
-use crate::io::dev::{device_root, DeviceNode};
-use crate::io::dev::{hub::DeviceHub, Device, DeviceRef};
+use crate::io::dev::{device_root, Device, DeviceNode, DeviceRef};
 use crate::io::keymap::{CommonKeycode, KeyAction, Keycode, KeycodeMap};
 use crate::io::vt;
 use crate::sync::future::FutureWriter;
