@@ -212,7 +212,7 @@ unsafe impl<T, const OWN_INFO: bool> Allocator for SlabAlloc<T, OWN_INFO> {
         }
 
         match self.lock().alloc() {
-            Some(ptr) => Ok(NonNull::from_raw_parts(ptr.cast(), Self::OBJECT_SIZE)),
+            Some(ptr) => Ok(NonNull::from_raw_parts(ptr, Self::OBJECT_SIZE)),
             None => Err(AllocError),
         }
     }
@@ -226,7 +226,7 @@ unsafe impl<T, const OWN_INFO: bool> Allocator for SlabAlloc<T, OWN_INFO> {
             return Err(AllocError);
         }
 
-        Ok(NonNull::from_raw_parts(ptr.cast(), Self::OBJECT_SIZE))
+        Ok(NonNull::from_raw_parts(ptr, Self::OBJECT_SIZE))
     }
 
     unsafe fn shrink(&self, ptr: NonNull<u8>, _old_layout: Layout, new_layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
@@ -234,7 +234,7 @@ unsafe impl<T, const OWN_INFO: bool> Allocator for SlabAlloc<T, OWN_INFO> {
             return Err(AllocError);
         }
 
-        Ok(NonNull::from_raw_parts(ptr.cast(), Self::OBJECT_SIZE))
+        Ok(NonNull::from_raw_parts(ptr, Self::OBJECT_SIZE))
     }
 }
 

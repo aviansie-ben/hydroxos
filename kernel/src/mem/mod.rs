@@ -20,7 +20,7 @@ pub struct PageBasedAlloc;
 unsafe impl Allocator for PageBasedAlloc {
     fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
         if layout.size() == 0 {
-            return Ok(NonNull::from_raw_parts(NonNull::dangling(), 0));
+            return Ok(NonNull::from_raw_parts(NonNull::<()>::dangling(), 0));
         }
 
         if layout.align() > PAGE_SIZE {
@@ -82,7 +82,7 @@ unsafe impl Allocator for PageBasedAlloc {
         }
 
         Ok(NonNull::from_raw_parts(
-            NonNull::new(start_ptr.as_mut_ptr()).unwrap(),
+            NonNull::new(start_ptr.as_mut_ptr::<()>()).unwrap(),
             num_pages * PAGE_SIZE,
         ))
     }
@@ -126,7 +126,7 @@ unsafe impl Allocator for PageBasedAlloc {
         let num_pages_new = new_layout.size().div_ceil(PAGE_SIZE);
 
         if num_pages_new == num_pages_old {
-            return Ok(NonNull::from_raw_parts(ptr.cast(), num_pages_new * PAGE_SIZE));
+            return Ok(NonNull::from_raw_parts(ptr, num_pages_new * PAGE_SIZE));
         }
 
         let new_ptr = self.allocate(new_layout)?;
@@ -175,7 +175,7 @@ unsafe impl Allocator for PageBasedAlloc {
             }
         }
 
-        Ok(NonNull::from_raw_parts(ptr.cast(), num_pages_new * PAGE_SIZE))
+        Ok(NonNull::from_raw_parts(ptr, num_pages_new * PAGE_SIZE))
     }
 }
 
@@ -237,7 +237,7 @@ unsafe impl GlobalAlloc for DefaultAlloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let result = match get_new_alloc_type(layout) {
             AllocType::Early => Ok(NonNull::from_raw_parts(
-                NonNull::new(early::alloc(layout.size(), layout.align())).unwrap().cast(),
+                NonNull::new(early::alloc(layout.size(), layout.align())).unwrap(),
                 layout.size(),
             )),
             AllocType::Slab8 => slab::SLAB_8.allocate(layout),
@@ -294,7 +294,7 @@ unsafe impl GlobalAlloc for DefaultAlloc {
             let ptr = NonNull::new(ptr).unwrap();
             let result = match get_existing_alloc_type(ptr.as_ptr(), layout) {
                 AllocType::Early => Ok(NonNull::from_raw_parts(
-                    NonNull::new(early::realloc(ptr.as_ptr(), layout.size(), new_size)).unwrap().cast(),
+                    NonNull::new(early::realloc(ptr.as_ptr(), layout.size(), new_size)).unwrap(),
                     layout.size(),
                 )),
                 AllocType::Slab8 => realloc(&slab::SLAB_8, ptr, layout, new_size),

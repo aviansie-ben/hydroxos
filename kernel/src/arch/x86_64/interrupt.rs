@@ -1,5 +1,5 @@
 use alloc::boxed::Box;
-use core::arch::asm;
+use core::arch::naked_asm;
 use core::mem;
 
 use x86_64::instructions::tables::lidt;
@@ -17,12 +17,11 @@ macro_rules! handler_with_code {
         #[naked]
         extern "C" fn $name() {
             unsafe {
-                asm!(
+                naked_asm!(
                     "push {}",
                     "jmp {}",
                     const $n,
-                    sym begin_interrupt_common,
-                    options(noreturn)
+                    sym begin_interrupt_common
                 );
             };
         }
@@ -34,13 +33,12 @@ macro_rules! handler_without_code {
         #[naked]
         extern "C" fn $name() {
             unsafe {
-                asm!(
+                naked_asm!(
                     "push 0",
                     "push {}",
                     "jmp {}",
                     const $n,
-                    sym begin_interrupt_common,
-                    options(noreturn)
+                    sym begin_interrupt_common
                 );
             }
         }
@@ -49,7 +47,7 @@ macro_rules! handler_without_code {
 
 #[naked]
 unsafe extern "C" fn begin_interrupt_common() {
-    asm!(
+    naked_asm!(
         // Save all general-purpose registers and segment selectors that weren't automatically pushed by the CPU when starting the
         // interrupt.
         "push rax",
@@ -136,8 +134,7 @@ unsafe extern "C" fn begin_interrupt_common() {
         "add rsp, 16",
         "iretq",
         const super::gdt::KERNEL_DS.0,
-        sym handle_interrupt,
-        options(noreturn)
+        sym handle_interrupt
     );
 }
 

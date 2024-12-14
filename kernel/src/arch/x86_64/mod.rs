@@ -1,5 +1,5 @@
 use alloc::boxed::Box;
-use core::arch::asm;
+use core::arch::{asm, naked_asm};
 use core::ptr;
 
 use bootloader::BootInfo;
@@ -80,12 +80,11 @@ pub(crate) unsafe fn init_phase_2() {
 
 #[naked]
 unsafe extern "C" fn idle() {
-    asm!(
+    naked_asm!(
         "sti",
         "hlt",
         "jmp {}",
-        sym idle,
-        options(noreturn)
+        sym idle
     );
 }
 
