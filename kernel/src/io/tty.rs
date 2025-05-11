@@ -119,13 +119,13 @@ impl<const N: usize> TtyReadQueue<N> {
         while !data.is_empty() {
             if let Some(request) = self.requests.front_mut() {
                 unsafe {
-                    let buf_len = (*request.buf).len();
+                    let buf_len = request.buf.len();
 
                     let copy_begin = request.pos;
                     let copy_end = copy_begin.saturating_add(data.len()).min(buf_len);
                     let copy_len = copy_end - request.pos;
 
-                    (*request.buf)[copy_begin..copy_end].copy_from_slice(&data[..copy_len]);
+                    (&mut (*request.buf.get_unchecked_mut(copy_begin..copy_end))).copy_from_slice(&data[..copy_len]);
                     data = &data[copy_len..];
 
                     request.pos = copy_end;

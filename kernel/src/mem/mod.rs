@@ -53,7 +53,7 @@ unsafe impl Allocator for PageBasedAlloc {
                     }
 
                     unsafe {
-                        frame::get_allocator().free_many(MaybeUninit::slice_assume_init_ref(&frames[..batch_num_frames]));
+                        frame::get_allocator().free_many(&frames[..batch_num_frames].assume_init_ref());
                     }
 
                     num_pages_freed += batch_num_frames;
@@ -104,7 +104,7 @@ unsafe impl Allocator for PageBasedAlloc {
             }
 
             unsafe {
-                frame::get_allocator().free_many(MaybeUninit::slice_assume_init_ref(&frames[..batch_num_frames]));
+                frame::get_allocator().free_many(frames[..batch_num_frames].assume_init_ref());
             }
 
             num_pages_freed += batch_num_frames;
@@ -162,7 +162,7 @@ unsafe impl Allocator for PageBasedAlloc {
                 }
 
                 unsafe {
-                    frame::get_allocator().free_many(MaybeUninit::slice_assume_init_ref(&frames[..batch_num_frames]));
+                    frame::get_allocator().free_many(frames[..batch_num_frames].assume_init_ref());
                 }
 
                 num_pages_freed += batch_num_frames;

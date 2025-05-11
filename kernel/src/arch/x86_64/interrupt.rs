@@ -14,38 +14,34 @@ use crate::util::OneShotManualInit;
 
 macro_rules! handler_with_code {
     ($name:ident, $n:expr) => {
-        #[naked]
-        extern "C" fn $name() {
-            unsafe {
-                naked_asm!(
-                    "push {}",
-                    "jmp {}",
-                    const $n,
-                    sym begin_interrupt_common
-                );
-            };
+        #[unsafe(naked)]
+        unsafe extern "C" fn $name() {
+            naked_asm!(
+                "push {}",
+                "jmp {}",
+                const $n,
+                sym begin_interrupt_common
+            );
         }
     }
 }
 
 macro_rules! handler_without_code {
     ($name:ident, $n:expr) => {
-        #[naked]
-        extern "C" fn $name() {
-            unsafe {
-                naked_asm!(
-                    "push 0",
-                    "push {}",
-                    "jmp {}",
-                    const $n,
-                    sym begin_interrupt_common
-                );
-            }
+        #[unsafe(naked)]
+        unsafe extern "C" fn $name() {
+            naked_asm!(
+                "push 0",
+                "push {}",
+                "jmp {}",
+                const $n,
+                sym begin_interrupt_common
+            );
         }
     }
 }
 
-#[naked]
+#[unsafe(naked)]
 unsafe extern "C" fn begin_interrupt_common() {
     naked_asm!(
         // Save all general-purpose registers and segment selectors that weren't automatically pushed by the CPU when starting the
@@ -396,7 +392,7 @@ impl InterruptTableEntry {
         reserved: 0,
     };
 
-    fn new(ty: u16, dpl: PrivilegeLevel, ist: u16, f: Option<extern "C" fn()>) -> InterruptTableEntry {
+    fn new(ty: u16, dpl: PrivilegeLevel, ist: u16, f: Option<unsafe extern "C" fn()>) -> InterruptTableEntry {
         let mut entry = InterruptTableEntry::EMPTY;
 
         entry.set_type(ty);
@@ -420,7 +416,7 @@ impl InterruptTableEntry {
     }
 
     #[allow(clippy::fn_to_numeric_cast)]
-    fn set_handler(&mut self, f: Option<extern "C" fn()>) {
+    fn set_handler(&mut self, f: Option<unsafe extern "C" fn()>) {
         if let Some(f) = f {
             let f = f as u64;
 

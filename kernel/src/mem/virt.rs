@@ -268,12 +268,15 @@ impl VirtualAllocator {
     unsafe fn combine_pages(&mut self, p1: *mut VirtualAllocPage, p2: *mut VirtualAllocPage) {
         assert_eq!((*p1).header.next, p2);
 
-        (*p1).regions[(*p1).header.len()..((*p1).header.len() + (*p2).header.len())].copy_from_slice(&(*p2).regions[0..(*p2).header.len()]);
-        (*p1).header.set_len((*p1).header.len() + (*p2).header.len());
+        let p1 = &mut *p1;
+        let p2 = &mut *p2;
 
-        (*p1).header.next = (*p2).header.next;
-        if !(*p2).header.next.is_null() {
-            (*(*p2).header.next).header.prev = p1;
+        p1.regions[p1.header.len()..(p1.header.len() + p2.header.len())].copy_from_slice(&p2.regions[0..p2.header.len()]);
+        p1.header.set_len(p1.header.len() + p2.header.len());
+
+        p1.header.next = p2.header.next;
+        if !p2.header.next.is_null() {
+            (*p2.header.next).header.prev = p1;
         }
 
         VirtualAllocPage::free(p2);

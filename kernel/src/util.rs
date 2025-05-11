@@ -170,7 +170,7 @@ impl<T, const N: usize> ArrayDeque<T, N> {
         Self {
             head: 0,
             len: 0,
-            data: MaybeUninit::uninit_array(),
+            data: [const { MaybeUninit::uninit() }; N],
         }
     }
 

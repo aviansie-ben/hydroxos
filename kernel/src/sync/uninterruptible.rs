@@ -152,11 +152,11 @@ cfg_if::cfg_if! {
             static HELD_LOCKS_LEN: Cell<usize> = Cell::new(0);
 
             pub unsafe fn held_spinlocks() -> Result<&'static [*const RawSpinlock], SpinlockTrackingDisabledError> {
-                Ok(unsafe { &(*HELD_LOCKS.get())[..HELD_LOCKS_LEN.get()] })
+                Ok(unsafe { &(&*HELD_LOCKS.get())[..HELD_LOCKS_LEN.get()] })
             }
 
             pub fn check_spinlock_for_deadlock(lock: *const RawSpinlock) {
-                if unsafe { (*HELD_LOCKS.get())[..HELD_LOCKS_LEN.get()].contains(&lock) } {
+                if unsafe { (&*HELD_LOCKS.get())[..HELD_LOCKS_LEN.get()].contains(&lock) } {
                     panic!("Attempt to acquire spinlock {:?} already held by current core", lock);
                 }
             }
@@ -173,7 +173,7 @@ cfg_if::cfg_if! {
             }
 
             pub fn pop_spinlock(lock: *const RawSpinlock) {
-                let held_locks = unsafe { &mut (*HELD_LOCKS.get())[..HELD_LOCKS_LEN.get()] };
+                let held_locks = unsafe { &mut (&mut *HELD_LOCKS.get())[..HELD_LOCKS_LEN.get()] };
 
                 if let Some((idx, _)) = held_locks.iter().find_position(|&&l| l == lock) {
                     held_locks.copy_within((idx + 1).., idx);

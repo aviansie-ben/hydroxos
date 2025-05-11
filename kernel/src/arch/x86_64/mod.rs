@@ -78,7 +78,7 @@ pub(crate) unsafe fn init_phase_2() {
     dev::ps2::init();
 }
 
-#[naked]
+#[unsafe(naked)]
 unsafe extern "C" fn idle() {
     naked_asm!(
         "sti",
