@@ -18,7 +18,7 @@ pub fn xsave_enabled() -> bool {
 }
 
 pub fn avx_enabled() -> bool {
-    XSAVE.try_get().map_or(false, |xs| xs.avx_offset.is_some())
+    XSAVE.try_get().is_some_and(|xs| xs.avx_offset.is_some())
 }
 
 #[repr(usize)]

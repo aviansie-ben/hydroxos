@@ -71,7 +71,7 @@ struct LogLevelOptions {
 impl LogLevelOptions {
     #[inline(always)]
     fn use_fast_path(&self) -> bool {
-        self.levels.len() == 0
+        self.levels.is_empty()
     }
 }
 
@@ -79,7 +79,7 @@ pub fn init() {
     let default_level = options::get().get("loglevel").unwrap_or(LogLevel::Info);
     let levels: BTreeMap<_, _> = options::get()
         .iter_group("loglevel")
-        .filter_map(|(k, v)| if let Some(v) = v { Some((k, v)) } else { None })
+        .filter_map(|(k, v)| v.map(|v| (k, v)))
         .collect();
 
     LOG_LEVELS.set(LogLevelOptions { default_level, levels });

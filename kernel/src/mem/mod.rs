@@ -53,7 +53,7 @@ unsafe impl Allocator for PageBasedAlloc {
                     }
 
                     unsafe {
-                        frame::get_allocator().free_many(&frames[..batch_num_frames].assume_init_ref());
+                        frame::get_allocator().free_many(frames[..batch_num_frames].assume_init_ref());
                     }
 
                     num_pages_freed += batch_num_frames;

@@ -6,7 +6,7 @@ use crate::sync::UninterruptibleSpinlock;
 use crate::util::OneShotManualInit;
 
 // TODO When we switch to a bootloader that allows it, we should allow options to be set from it
-pub static OPTIONS_STR: &'static str = env!("HYDROXOS_OPTIONS");
+pub static OPTIONS_STR: &str = env!("HYDROXOS_OPTIONS");
 static OPTIONS: OneShotManualInit<KernelOptions<'static>> = OneShotManualInit::uninit();
 
 pub struct KernelOptions<'a> {
@@ -24,7 +24,7 @@ impl<'a> KernelOptions<'a> {
             let key_end = s.find(|c: char| c.is_whitespace() || c == '=').unwrap_or(s.len());
             let key = &s[..key_end];
 
-            let val = if s[key_end..].chars().next() == Some('=') {
+            let val = if s[key_end..].starts_with('=') {
                 s = &s[key_end + 1..];
 
                 let val = match s.chars().next() {
@@ -92,7 +92,7 @@ impl<'a> KernelOptions<'a> {
         }
     }
 
-    pub fn get_flag<'b>(&'b self, key: &str) -> Option<bool> {
+    pub fn get_flag(&self, key: &str) -> Option<bool> {
         match self.try_get(key) {
             Some(Some(Ok(val))) => Some(val),
             Some(None) => Some(true),
@@ -104,16 +104,14 @@ impl<'a> KernelOptions<'a> {
         }
     }
 
-    pub fn iter<'b>(&'b self) -> impl Iterator<Item = (&'b str, Option<&'b str>)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&str, Option<&str>)> {
         self.options.iter().map(|(&k, &v)| (k, v))
     }
 
     pub fn iter_group<'b: 'a, T: KernelOptionParseable<'b>>(&'b self, group: &'b str) -> impl Iterator<Item = (&'b str, Option<T>)> {
         self.iter().filter_map(move |(k, v)| {
-            if k.starts_with(group) {
-                let sk = &k[group.len()..];
-
-                if sk.starts_with('.') {
+            if let Some(sk) = k.strip_prefix(group) {
+                if let Some(sk) = sk.strip_prefix('.') {
                     let v = match v.map(|v| T::try_parse_kopt(v)) {
                         Some(Ok(v)) => Some(v),
                         _ => {
@@ -122,7 +120,7 @@ impl<'a> KernelOptions<'a> {
                         },
                     };
 
-                    Some((&sk[1..], v))
+                    Some((sk, v))
                 } else {
                     None
                 }

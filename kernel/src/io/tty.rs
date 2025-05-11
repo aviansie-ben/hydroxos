@@ -125,7 +125,7 @@ impl<const N: usize> TtyReadQueue<N> {
                     let copy_end = copy_begin.saturating_add(data.len()).min(buf_len);
                     let copy_len = copy_end - request.pos;
 
-                    (&mut (*request.buf.get_unchecked_mut(copy_begin..copy_end))).copy_from_slice(&data[..copy_len]);
+                    (*request.buf.get_unchecked_mut(copy_begin..copy_end)).copy_from_slice(&data[..copy_len]);
                     data = &data[copy_len..];
 
                     request.pos = copy_end;

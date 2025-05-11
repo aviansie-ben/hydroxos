@@ -652,7 +652,7 @@ where
         let mut contents = [0; M.div_ceil(32)];
 
         if M >= N {
-            (&mut contents[..N.div_ceil(32)]).clone_from_slice(&self.contents);
+            contents[..N.div_ceil(32)].clone_from_slice(&self.contents);
         } else {
             contents.clone_from_slice(&self.contents[..M.div_ceil(32)]);
 

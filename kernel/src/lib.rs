@@ -24,6 +24,7 @@
 #![allow(clippy::new_without_default)]
 #![allow(clippy::result_unit_err)]
 #![allow(clippy::single_match)]
+#![allow(clippy::uninlined_format_args)]
 #![allow(clippy::unnecessary_cast)] // Incorrectly catches cases where pointee type is unknown
 
 extern crate alloc;
